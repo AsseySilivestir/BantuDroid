@@ -40,6 +40,31 @@ public class BantuEngine {
         this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    /**
+     * Get the absolute path to the Bantu binary.
+     * On Android 10+, SELinux may block execution from the files/ directory.
+     * The nativeLibraryDir is the recommended location for executable native code.
+     * We try both locations, preferring nativeLibraryDir if the binary is there.
+     */
+    private File getBinaryFile() {
+        // Option 1: nativeLibraryDir — this directory has SELinux permission for execution
+        try {
+            String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+            if (nativeLibDir != null) {
+                File libBinary = new File(nativeLibDir, "libbantu.so");
+                if (libBinary.exists() && libBinary.canExecute()) {
+                    Log.i(TAG, "Using binary from nativeLibraryDir: " + libBinary.getAbsolutePath());
+                    return libBinary;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "nativeLibraryDir not available", e);
+        }
+
+        // Option 2: files/bin/ — our extracted binary (may need chmod fix)
+        return new File(binDir, BINARY_NAME);
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Installation
     // ──────────────────────────────────────────────────────────────
@@ -71,10 +96,14 @@ public class BantuEngine {
 
                 extractAsset(assetPath, binary);
 
-                // Make executable
+                // Make executable — use both Java API and explicit chmod
+                // File.setExecutable() can silently fail on some Android versions
+                // due to SELinux or filesystem restrictions, so we also call
+                // chmod 755 via the system shell as a fallback.
                 listener.onProgress("Setting permissions...");
                 binary.setExecutable(true, false);
                 binary.setReadable(true, false);
+                ensureExecutable(binary);
 
                 // Verify binary works
                 listener.onProgress("Verifying engine...");
@@ -108,7 +137,8 @@ public class BantuEngine {
      * Quick check if the engine binary exists and is executable.
      */
     public boolean isInstalled() {
-        File binary = new File(binDir, BINARY_NAME);
+        File binary = getBinaryFile();
+        // Binary exists and is executable — check both nativeLibDir and files/bin
         return binary.exists() && binary.canExecute();
     }
 
@@ -143,6 +173,7 @@ public class BantuEngine {
      */
     public BantuProcess run(String bantuFile) throws IOException {
         ensureInstalled();
+        ensureBinaryExecutable();
 
         File file = resolveFile(bantuFile);
         if (!file.exists()) {
@@ -151,7 +182,7 @@ public class BantuEngine {
                 "Looked in: " + file.getAbsolutePath());
         }
 
-        String binaryPath = new File(binDir, BINARY_NAME).getAbsolutePath();
+        String binaryPath = getBinaryFile().getAbsolutePath();
         ProcessBuilder pb = new ProcessBuilder(binaryPath, "run", file.getAbsolutePath());
         pb.directory(projectsDir);
         pb.redirectErrorStream(true);
@@ -170,8 +201,9 @@ public class BantuEngine {
      */
     public BantuProcess execute(String... args) throws IOException {
         ensureInstalled();
+        ensureBinaryExecutable();
 
-        String binaryPath = new File(binDir, BINARY_NAME).getAbsolutePath();
+        String binaryPath = getBinaryFile().getAbsolutePath();
         String[] cmd = new String[args.length + 1];
         cmd[0] = binaryPath;
         System.arraycopy(args, 0, cmd, 1, args.length);
@@ -189,8 +221,9 @@ public class BantuEngine {
      */
     public BantuProcess runShellCommand(String command) throws IOException {
         ensureInstalled();
+        ensureBinaryExecutable();
 
-        String binaryPath = new File(binDir, BINARY_NAME).getAbsolutePath();
+        String binaryPath = getBinaryFile().getAbsolutePath();
         ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c",
             binaryPath + " " + command);
         pb.directory(projectsDir);
@@ -299,6 +332,56 @@ public class BantuEngine {
         pb.environment().put("LANG", "en_US.UTF-8");
     }
 
+    /**
+     * Force-set the executable bit on the Bantu binary using chmod.
+     * File.setExecutable() can silently fail on some Android versions
+     * due to SELinux or the underlying filesystem not supporting it.
+     * We use the system's chmod command as a reliable fallback.
+     */
+    private void ensureExecutable(File binary) {
+        try {
+            // Method 1: Java API
+            binary.setExecutable(true, false);
+
+            // Method 2: Explicit chmod via system shell (more reliable on Android)
+            Process chmod = new ProcessBuilder("/system/bin/chmod", "755",
+                binary.getAbsolutePath()).start();
+            chmod.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+
+            // Verify it worked
+            if (!binary.canExecute()) {
+                Log.w(TAG, "Binary still not executable after chmod, attempting workaround...");
+
+                // Method 3: Copy via cat (bypasses any filesystem restrictions)
+                File tempBinary = new File(binDir, "bantu.tmp");
+                Process catChmod = new ProcessBuilder("/system/bin/sh", "-c",
+                    "cat " + binary.getAbsolutePath() + " > " + tempBinary.getAbsolutePath() +
+                    " && /system/bin/chmod 755 " + tempBinary.getAbsolutePath() +
+                    " && mv " + tempBinary.getAbsolutePath() + " " + binary.getAbsolutePath()
+                ).start();
+                catChmod.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                binary.setExecutable(true, false);
+            }
+
+            Log.i(TAG, "Binary executable status: " + binary.canExecute());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to set executable permission", e);
+        }
+    }
+
+    /**
+     * Re-check and fix executable permission before running the binary.
+     * This handles cases where Android may have reset permissions
+     * (e.g., after app update, device reboot, or SELinux context change).
+     */
+    private void ensureBinaryExecutable() {
+        File binary = getBinaryFile();
+        if (binary.exists() && !binary.canExecute()) {
+            Log.w(TAG, "Binary lost execute permission, re-applying...");
+            ensureExecutable(binary);
+        }
+    }
+
     private String getSupportedAbi() {
         // Check for arm64-v8a first, then armeabi-v7a, then x86_64
         if (android.os.Build.SUPPORTED_ABIS.length > 0) {
@@ -347,7 +430,7 @@ public class BantuEngine {
 
     private String getVersionFromBinary() {
         try {
-            String binaryPath = new File(binDir, BINARY_NAME).getAbsolutePath();
+            String binaryPath = getBinaryFile().getAbsolutePath();
             ProcessBuilder pb = new ProcessBuilder(binaryPath, "--version");
             pb.redirectErrorStream(true);
             Process p = pb.start();
