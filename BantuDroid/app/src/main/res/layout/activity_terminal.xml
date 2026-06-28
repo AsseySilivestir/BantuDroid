@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_dark">
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:background="@color/bg_surface">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="BantuDroid Terminal"
+            android:textColor="@color/bantu_green"
+            android:textSize="16sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:text="Clear"
+            android:textSize="11sp"
+            android:backgroundTint="@color/bg_input"
+            android:textColor="@color/text_secondary"
+            android:minWidth="60dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+    </LinearLayout>
+
+    <!-- Quick Actions Bar -->
+    <HorizontalScrollView
+        android:id="@+id/quick_actions_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_surface"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/quick_actions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/qa_ddns"
+                style="@style/QuickActionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="DDNS"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/qa_server"
+                style="@style/QuickActionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Server"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/qa_hello"
+                style="@style/QuickActionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Hello"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/qa_db"
+                style="@style/QuickActionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Database"
+                android:layout_marginEnd="6dp" />
+
+            <Button
+                android:id="@+id/qa_bench"
+                style="@style/QuickActionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Bench" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Terminal Output -->
+    <ScrollView
+        android:id="@+id/scrollview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/bg_dark">
+
+        <TextView
+            android:id="@+id/terminal_output"
+            style="@style/TerminalText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="10dp" />
+    </ScrollView>
+
+    <!-- Command Input Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:background="@color/bg_surface">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="$ "
+            android:textColor="@color/bantu_green"
+            android:textSize="16sp"
+            android:fontFamily="monospace" />
+
+        <EditText
+            android:id="@+id/command_input"
+            style="@style/TerminalInput"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:hint="@string/terminal_hint"
+            android:inputType="text"
+            android:imeOptions="actionGo"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/btn_run"
+            android:layout_width="56dp"
+            android:layout_height="36dp"
+            android:text="Run"
+            android:textSize="12sp"
+            android:backgroundTint="@color/bantu_green"
+            android:textColor="@color/black"
+            android:layout_marginStart="4dp" />
+
+        <Button
+            android:id="@+id/btn_stop"
+            android:layout_width="56dp"
+            android:layout_height="36dp"
+            android:text="Stop"
+            android:textSize="12sp"
+            android:backgroundTint="@color/text_error"
+            android:textColor="@color/white"
+            android:enabled="false"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+</LinearLayout>

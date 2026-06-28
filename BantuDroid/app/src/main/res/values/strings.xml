@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BantuDroid</string>
+    <string name="app_subtitle">Host the web from your phone</string>
+
+    <!-- Main screen -->
+    <string name="nav_terminal">Terminal</string>
+    <string name="nav_files">Files</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Terminal -->
+    <string name="terminal_hint">bantu run bantuddns.b</string>
+    <string name="terminal_welcome">Welcome to BantuDroid!\nType a Bantu command or tap a quick action below.\n\nQuick commands:\n  bantu run bantuddns.b   — Start DDNS + hosting\n  bantu run server.b       — Start web server\n  bantu run hello.b        — Hello world demo\n</string>
+    <string name="btn_run">Run</string>
+    <string name="btn_stop">Stop</string>
+    <string name="btn_clear">Clear</string>
+
+    <!-- Quick actions -->
+    <string name="action_ddns">DDNS</string>
+    <string name="action_server">Server</string>
+    <string name="action_hello">Hello</string>
+    <string name="action_install">Install Engine</string>
+
+    <!-- File manager -->
+    <string name="files_title">Bantu Projects</string>
+    <string name="files_empty">No .b files found. Tap + to add one.</string>
+    <string name="files_run">Run</string>
+    <string name="files_edit">Edit</string>
+    <string name="files_delete">Delete</string>
+    <string name="files_share">Share</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Server Dashboard</string>
+    <string name="dashboard_url_hint">http://localhost:8080</string>
+    <string name="dashboard_loading">Loading dashboard…</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_engine">Bantu Engine</string>
+    <string name="settings_engine_version">Engine Version</string>
+    <string name="settings_reinstall">Reinstall Engine</string>
+    <string name="settings_server">Server</string>
+    <string name="settings_default_port">Default Port</string>
+    <string name="settings_autostart">Auto-start on boot</string>
+    <string name="settings_ddns">Dynamic DNS</string>
+    <string name="settings_ddns_provider">DDNS Provider</string>
+    <string name="settings_ddns_domain">Domain</string>
+    <string name="settings_ddns_token">API Token</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">BantuDroid v1.0.0</string>
+    <string name="settings_github">GitHub Repository</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_name">Bantu Server</string>
+    <string name="notif_channel_desc">Shows server status and IP updates</string>
+    <string name="notif_server_running">Bantu server is running</string>
+    <string name="notif_server_stopped">Bantu server stopped</string>
+    <string name="notif_ip_changed">IP changed: %s</string>
+
+    <!-- Engine -->
+    <string name="engine_installing">Installing Bantu engine…</string>
+    <string name="engine_installed">Bantu engine installed!</string>
+    <string name="engine_failed">Engine installation failed</string>
+    <string name="engine_ready">Engine ready</string>
+
+    <!-- General -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="error">Error</string>
+    <string name="success">Success</string>
+    <string name="running">Running</string>
+    <string name="stopped">Stopped</string>
+</resources>

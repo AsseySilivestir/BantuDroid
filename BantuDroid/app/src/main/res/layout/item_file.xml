@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single file item in the RecyclerView list -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@color/bg_card"
+    android:padding="12dp"
+    android:layout_marginBottom="8dp">
+
+    <!-- File icon -->
+    <ImageView
+        android:id="@+id/iv_file_icon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@android:drawable/ic_menu_edit"
+        android:tint="@color/bantu_green"
+        android:layout_marginEnd="12dp"
+        android:contentDescription="File icon" />
+
+    <!-- File info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tv_file_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:fontFamily="monospace" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/tv_file_size"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_hint"
+                android:textSize="11sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="  ·  "
+                android:textColor="@color/text_hint"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tv_file_modified"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_hint"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Action buttons -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_file_run"
+            android:layout_width="48dp"
+            android:layout_height="32dp"
+            android:text="Run"
+            android:textSize="10sp"
+            android:backgroundTint="@color/bantu_green"
+            android:textColor="@color/black"
+            android:padding="0dp"
+            android:minWidth="48dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_file_edit"
+            android:layout_width="48dp"
+            android:layout_height="32dp"
+            android:text="Edit"
+            android:textSize="10sp"
+            android:backgroundTint="@color/bg_input"
+            android:textColor="@color/text_primary"
+            android:padding="0dp"
+            android:minWidth="48dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_file_delete"
+            android:layout_width="48dp"
+            android:layout_height="32dp"
+            android:text="Del"
+            android:textSize="10sp"
+            android:backgroundTint="@color/bg_input"
+            android:textColor="@color/text_error"
+            android:padding="0dp"
+            android:minWidth="48dp" />
+    </LinearLayout>
+
+</LinearLayout>

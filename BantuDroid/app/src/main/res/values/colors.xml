@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand colors - dark theme inspired -->
+    <color name="bantu_green">#00E676</color>
+    <color name="bantu_green_dark">#00C853</color>
+    <color name="bantu_green_light">#69F0AE</color>
+    <color name="bantu_orange">#FF6D00</color>
+    <color name="bantu_orange_dark">#E65100</color>
+
+    <!-- Background colors -->
+    <color name="bg_dark">#121212</color>
+    <color name="bg_surface">#1E1E1E</color>
+    <color name="bg_card">#2D2D2D</color>
+    <color name="bg_input">#333333</color>
+
+    <!-- Text colors -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0B0B0</color>
+    <color name="text_hint">#666666</color>
+    <color name="text_terminal">#00FF00</color>
+    <color name="text_error">#FF5252</color>
+    <color name="text_warning">#FFD740</color>
+    <color name="text_success">#69F0AE</color>
+
+    <!-- Standard -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+</resources>

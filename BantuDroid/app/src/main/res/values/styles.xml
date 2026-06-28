@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme (dark) -->
+    <style name="Theme.BantuDroid" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/bantu_green</item>
+        <item name="colorPrimaryDark">@color/bantu_green_dark</item>
+        <item name="colorPrimaryVariant">@color/bantu_green_dark</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorSecondary">@color/bantu_orange</item>
+        <item name="colorSecondaryVariant">@color/bantu_orange_dark</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:colorBackground">@color/bg_dark</item>
+        <item name="colorSurface">@color/bg_surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:statusBarColor">@color/bg_dark</item>
+        <item name="android:navigationBarColor">@color/bg_dark</item>
+        <item name="android:windowBackground">@color/bg_dark</item>
+    </style>
+
+    <!-- Terminal text style -->
+    <style name="TerminalText" parent="android:Widget.TextView">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/text_terminal</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+
+    <!-- Terminal input style -->
+    <style name="TerminalInput" parent="android:Widget.EditText">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+        <item name="android:background">@color/transparent</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- Quick action button style -->
+    <style name="QuickActionButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:textColor">@color/bantu_green</item>
+        <item name="strokeColor">@color/bantu_green</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- Card style for file items -->
+    <style name="FileCard" parent="Widget.MaterialComponents.CardView">
+        <item name="cardBackgroundColor">@color/bg_card</item>
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">2dp</item>
+    </style>
+</resources>

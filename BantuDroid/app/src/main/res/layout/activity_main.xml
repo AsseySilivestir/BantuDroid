@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_dark"
+    android:padding="24dp"
+    android:gravity="center">
+
+    <!-- Setup Screen (shown on first launch) -->
+    <LinearLayout
+        android:id="@+id/setup_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="visible">
+
+        <!-- Logo / Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BantuDroid"
+            android:textColor="@color/bantu_green"
+            android:textSize="42sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Host the web from your phone"
+            android:textColor="@color/text_secondary"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="48dp" />
+
+        <!-- Install progress -->
+        <ProgressBar
+            android:id="@+id/setup_progress"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:visibility="gone"
+            android:indeterminateTint="@color/bantu_green" />
+
+        <TextView
+            android:id="@+id/setup_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Install the Bantu engine to get started"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="32dp"
+            android:gravity="center" />
+
+        <Button
+            android:id="@+id/btn_install"
+            android:layout_width="240dp"
+            android:layout_height="56dp"
+            android:text="Install Engine"
+            android:textSize="16sp"
+            android:backgroundTint="@color/bantu_green"
+            android:textColor="@color/black" />
+
+    </LinearLayout>
+
+    <!-- Main Screen (shown after installation) -->
+    <LinearLayout
+        android:id="@+id/main_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <!-- Logo -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BantuDroid"
+            android:textColor="@color/bantu_green"
+            android:textSize="36sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_engine_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Engine ready"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="48dp" />
+
+        <!-- Navigation buttons -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <Button
+                android:id="@+id/btn_terminal"
+                android:layout_width="match_parent"
+                android:layout_height="72dp"
+                android:text="Terminal"
+                android:textSize="18sp"
+                android:backgroundTint="@color/bantu_green"
+                android:textColor="@color/black"
+                android:drawableStart="@android:drawable/ic_menu_sort_by_size"
+                android:drawablePadding="16dp"
+                android:gravity="start|center_vertical"
+                android:paddingStart="24dp" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <Button
+                android:id="@+id/btn_files"
+                android:layout_width="match_parent"
+                android:layout_height="72dp"
+                android:text="Files"
+                android:textSize="18sp"
+                android:backgroundTint="@color/bg_card"
+                android:textColor="@color/bantu_green"
+                android:drawableStart="@android:drawable/ic_menu_edit"
+                android:drawablePadding="16dp"
+                android:gravity="start|center_vertical"
+                android:paddingStart="24dp" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <Button
+                android:id="@+id/btn_dashboard"
+                android:layout_width="match_parent"
+                android:layout_height="72dp"
+                android:text="Dashboard"
+                android:textSize="18sp"
+                android:backgroundTint="@color/bg_card"
+                android:textColor="@color/bantu_orange"
+                android:drawableStart="@android:drawable/ic_menu_compass"
+                android:drawablePadding="16dp"
+                android:gravity="start|center_vertical"
+                android:paddingStart="24dp" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <Button
+                android:id="@+id/btn_settings"
+                android:layout_width="match_parent"
+                android:layout_height="72dp"
+                android:text="Settings"
+                android:textSize="18sp"
+                android:backgroundTint="@color/bg_card"
+                android:textColor="@color/text_secondary"
+                android:drawableStart="@android:drawable/ic_menu_preferences"
+                android:drawablePadding="16dp"
+                android:gravity="start|center_vertical"
+                android:paddingStart="24dp" />
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+
+</LinearLayout>
