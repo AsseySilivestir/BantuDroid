@@ -46,7 +46,7 @@ public class SettingsActivity extends AppCompatActivity {
         // Load current values
         tvEngineVersion.setText("v" + engine.getInstalledVersion());
 
-        java.util.SharedPreferences prefs =
+        android.content.SharedPreferences prefs =
             PreferenceManager.getDefaultSharedPreferences(this);
 
         etDefaultPort.setText(String.valueOf(
@@ -106,7 +106,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void saveSettings() {
         try {
             int port = Integer.parseInt(etDefaultPort.getText().toString().trim());
-            java.util.SharedPreferences.Editor editor =
+            android.content.SharedPreferences.Editor editor =
                 PreferenceManager.getDefaultSharedPreferences(this).edit();
             editor.putInt("default_port", port);
             editor.putBoolean("autostart", switchAutostart.isChecked());

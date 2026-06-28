@@ -242,9 +242,11 @@ public class BantuProcess {
      */
     public long getPid() {
         try {
-            // Process.pid() is available on Android 9+
-            return process.pid();
-        } catch (NoSuchMethodError e) {
+            // Use reflection for compatibility with API 24+
+            java.lang.reflect.Field pidField = process.getClass().getDeclaredField("pid");
+            pidField.setAccessible(true);
+            return pidField.getInt(process);
+        } catch (Exception e) {
             return -1;
         }
     }

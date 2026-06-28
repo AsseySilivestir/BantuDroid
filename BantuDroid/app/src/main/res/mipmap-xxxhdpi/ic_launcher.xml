@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/bantu_green_dark"/>
-    <foreground>
-        <inset
-            android:drawable="@android:drawable/ic_media_play"
-            android:inset="25%" />
-    </foreground>
-</adaptive-icon>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M0,0h48v48h-48z"/>
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M16,12l16,12l-16,12z"/>
+</vector>
