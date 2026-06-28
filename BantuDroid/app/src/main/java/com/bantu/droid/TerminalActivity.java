@@ -1,15 +1,11 @@
 package com.bantu.droid;
 
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
@@ -134,7 +130,7 @@ public class TerminalActivity extends AppCompatActivity
                 }
                 if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                     String next = commandHistory.next();
-                    if (next != null) commandInput.setText(next != null ? next : "");
+                    commandInput.setText(next != null ? next : "");
                     return true;
                 }
             }

@@ -1,11 +1,12 @@
 package com.bantu.droid;
 
 import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -203,8 +204,7 @@ public class FileManagerActivity extends AppCompatActivity {
 
             // Run button
             holder.btnRun.setOnClickListener(v -> {
-                // Start TerminalActivity with the file
-                android.content.Intent intent = new android.content.Intent(
+                Intent intent = new Intent(
                     FileManagerActivity.this, TerminalActivity.class);
                 intent.putExtra("run_file", file.getName());
                 startActivity(intent);
@@ -232,13 +232,6 @@ public class FileManagerActivity extends AppCompatActivity {
             ImageView ivIcon;
             TextView tvName, tvSize, tvModified;
             Button btnRun, btnEdit, btnDelete;
-
-            // Using a simple Button class alias
-            class Button extends android.widget.Button {
-                public Button(android.content.Context context) {
-                    super(context);
-                }
-            }
 
             FileViewHolder(View itemView) {
                 super(itemView);
