@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #0a0a0a;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    padding: 40px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 36px;
+    color: #00E676;
+    margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 16px;
+    margin-bottom: 40px;
+  }
+
+  .screens-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .screen-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .screen-label {
+    font-size: 18px;
+    font-weight: 700;
+    color: #00E676;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .screen-desc {
+    font-size: 13px;
+    color: #999;
+    text-align: center;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  .phone {
+    width: 320px;
+    height: 640px;
+    border-radius: 32px;
+    border: 3px solid #333;
+    overflow: hidden;
+    background: #121212;
+    position: relative;
+    box-shadow: 0 0 40px rgba(0, 230, 118, 0.1), 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  .phone-notch {
+    width: 120px;
+    height: 24px;
+    background: #000;
+    border-radius: 0 0 16px 16px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 10;
+  }
+
+  .phone-content {
+    height: calc(100% - 24px);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .setup-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 32px;
+    text-align: center;
+  }
+
+  .setup-screen .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    color: #00E676;
+    margin-bottom: 8px;
+  }
+
+  .setup-screen .tagline {
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 48px;
+  }
+
+  .install-btn {
+    background: #00E676;
+    color: #000;
+    border: none;
+    padding: 14px 48px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+  }
+
+  .setup-status {
+    color: #888;
+    font-size: 13px;
+    margin-top: 20px;
+  }
+
+  .main-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+  }
+
+  .main-screen .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    color: #00E676;
+    margin-bottom: 4px;
+  }
+
+  .main-screen .engine-status {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 32px;
+  }
+
+  .menu-btn {
+    width: 100%;
+    padding: 16px 20px;
+    border-radius: 14px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: left;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+  }
+
+  .menu-btn.primary { background: #00E676; color: #000; }
+  .menu-btn.secondary { background: #2D2D2D; color: #00E676; }
+  .menu-btn.orange { background: #2D2D2D; color: #FF6D00; }
+  .menu-btn.muted { background: #2D2D2D; color: #B0B0B0; }
+
+  .terminal-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #121212;
+  }
+
+  .terminal-topbar {
+    background: #1E1E1E;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+  }
+
+  .terminal-topbar .title {
+    font-family: 'JetBrains Mono', monospace;
+    color: #00E676;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .terminal-topbar .clear-btn {
+    background: #333;
+    color: #888;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+
+  .quick-actions {
+    background: #1E1E1E;
+    padding: 6px 10px;
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid #333;
+    overflow-x: auto;
+  }
+
+  .quick-action-btn {
+    background: transparent;
+    border: 1px solid #00E676;
+    color: #00E676;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+  }
+
+  .terminal-body {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #00FF00;
+  }
+
+  .terminal-body .cmd { color: #69F0AE; }
+  .terminal-body .output { color: #00FF00; }
+  .terminal-body .info { color: #FFD740; }
+  .terminal-body .error { color: #FF5252; }
+
+  .terminal-input-bar {
+    background: #1E1E1E;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid #333;
+  }
+
+  .terminal-input-bar .prompt {
+    color: #00E676;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+  }
+
+  .terminal-input-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .run-btn { background: #00E676; color: #000; border: none; padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+  .stop-btn { background: #FF5252; color: #fff; border: none; padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+
+  .files-screen { display: flex; flex-direction: column; height: 100%; }
+
+  .files-topbar {
+    background: #1E1E1E;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+  }
+
+  .files-topbar .title {
+    font-family: 'JetBrains Mono', monospace;
+    color: #00E676;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .add-btn {
+    background: #00E676;
+    color: #000;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .file-list { padding: 10px; flex: 1; overflow-y: auto; }
+
+  .file-item {
+    background: #2D2D2D;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .file-icon { font-size: 24px; width: 36px; text-align: center; }
+  .file-info { flex: 1; }
+  .file-name { color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; }
+  .file-meta { color: #666; font-size: 10px; margin-top: 2px; }
+  .file-actions { display: flex; gap: 4px; }
+  .file-action-btn { border: none; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; }
+  .file-action-btn.run { background: #00E676; color: #000; }
+  .file-action-btn.edit { background: #333; color: #fff; }
+  .file-action-btn.del { background: #333; color: #FF5252; }
+
+  .dashboard-screen { display: flex; flex-direction: column; height: 100%; }
+
+  .dashboard-urlbar {
+    background: #1E1E1E;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1px solid #333;
+  }
+
+  .url-input {
+    flex: 1;
+    background: #333;
+    border: none;
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+  }
+
+  .url-btn { background: transparent; border: none; color: #00E676; font-size: 16px; }
+
+  .dashboard-webview {
+    flex: 1;
+    background: #121212;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .dashboard-content { font-family: 'JetBrains Mono', monospace; }
+  .dashboard-content h1 { font-size: 20px; color: #00E676; margin-bottom: 12px; text-align: left; border-bottom: 1px solid #333; padding-bottom: 8px; }
+  .dashboard-content .status-box { background: #1E1E1E; padding: 12px; border-radius: 8px; margin-bottom: 8px; }
+  .dashboard-content .status-label { color: #888; font-size: 11px; }
+  .dashboard-content .status-value { color: #00E676; font-size: 16px; font-weight: 700; }
+  .dashboard-content .link { color: #00E676; font-size: 12px; }
+
+  .settings-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .settings-title { font-family: 'JetBrains Mono', monospace; color: #00E676; font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+  .settings-section { margin-bottom: 20px; }
+  .settings-section-title { color: #00E676; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px; }
+  .settings-row { background: #2D2D2D; border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .settings-row .label { color: #fff; font-size: 13px; }
+  .settings-row .value { color: #00E676; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+  .settings-input { background: #2D2D2D; border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; border: none; width: 100%; color: #fff; font-size: 13px; font-family: 'JetBrains Mono', monospace; }
+  .settings-btn { width: 100%; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; margin-bottom: 6px; }
+  .settings-btn.danger { background: #333; color: #FF5252; }
+  .settings-btn.save { background: #00E676; color: #000; }
+  .settings-about { background: #2D2D2D; border-radius: 10px; padding: 14px; color: #888; font-size: 12px; font-family: 'JetBrains Mono', monospace; line-height: 1.6; }
+
+  .toggle-off { width: 44px; height: 24px; background: #333; border-radius: 12px; position: relative; }
+  .toggle-off::after { content: ''; width: 18px; height: 18px; background: #666; border-radius: 50%; position: absolute; top: 3px; left: 3px; }
+
+  .flow-section { margin-top: 60px; max-width: 1400px; margin-left: auto; margin-right: auto; }
+  .flow-section h2 { text-align: center; color: #00E676; font-family: 'JetBrains Mono', monospace; font-size: 28px; margin-bottom: 30px; }
+  .flow-steps { display: flex; justify-content: center; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .flow-step { background: #1E1E1E; border: 2px solid #00E676; border-radius: 14px; padding: 16px 20px; text-align: center; width: 160px; }
+  .flow-step .step-num { background: #00E676; color: #000; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+  .flow-step .step-text { color: #fff; font-size: 13px; font-weight: 500; }
+  .flow-arrow { color: #00E676; font-size: 28px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>BantuDroid</h1>
+<p class="subtitle">Host the web from your phone - Complete Screen Preview</p>
+
+<div class="screens-grid">
+
+  <div class="screen-wrapper">
+    <div class="screen-label">1. First Launch</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="setup-screen">
+          <div class="logo">BantuDroid</div>
+          <div class="tagline">Host the web from your phone</div>
+          <button class="install-btn">Install Engine</button>
+          <div class="setup-status">Install the Bantu engine to get started</div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">First time you open the app. One tap installs the Bantu binary to your phone. This only happens once.</div>
+  </div>
+
+  <div class="screen-wrapper">
+    <div class="screen-label">2. Main Menu</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="main-screen">
+          <div class="logo">BantuDroid</div>
+          <div class="engine-status">Engine ready (v1.2.0)</div>
+          <button class="menu-btn primary"><span>&gt;_</span> Terminal</button>
+          <button class="menu-btn secondary"><span>&#128196;</span> Files</button>
+          <button class="menu-btn orange"><span>&#127760;</span> Dashboard</button>
+          <button class="menu-btn muted"><span>&#9881;</span> Settings</button>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">After installation. Four buttons: Terminal (run commands), Files (manage .b files), Dashboard (web view), Settings (config).</div>
+  </div>
+
+  <div class="screen-wrapper">
+    <div class="screen-label">3. Terminal</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="terminal-screen">
+          <div class="terminal-topbar">
+            <span class="title">BantuDroid Terminal</span>
+            <button class="clear-btn">Clear</button>
+          </div>
+          <div class="quick-actions">
+            <button class="quick-action-btn">DDNS</button>
+            <button class="quick-action-btn">Server</button>
+            <button class="quick-action-btn">Hello</button>
+            <button class="quick-action-btn">Database</button>
+            <button class="quick-action-btn">Bench</button>
+          </div>
+          <div class="terminal-body">
+            <div>Welcome to BantuDroid!</div>
+            <div>Type a Bantu command or tap a quick action.</div>
+            <div>&nbsp;</div>
+            <div class="cmd">$ bantu run bantuddns.b</div>
+            <div class="output">=== BantuDroid DDNS + Hosting ===</div>
+            <div class="output">Initializing...</div>
+            <div class="output">Current public IP: 197.250.45.12</div>
+            <div class="info">Web server listening on port 8080</div>
+            <div class="info">Dashboard: http://localhost:8080</div>
+            <div>&nbsp;</div>
+            <div class="info">Your phone is now a hosting platform!</div>
+            <div class="output">Anyone can visit: mysite.duckdns.org</div>
+            <div>&nbsp;</div>
+            <div class="output">Monitoring IP (every 60s)...</div>
+            <div class="output">IP check: 197.250.45.12 (no change)</div>
+            <div class="output">IP check: 197.250.45.12 (no change)</div>
+            <div class="error">IP changed: 197.250.45.12 -> 197.250.46.88</div>
+            <div class="info">Updating Cloudflare DNS...</div>
+            <div class="output">Cloudflare DNS updated!</div>
+          </div>
+          <div class="terminal-input-bar">
+            <span class="prompt">$</span>
+            <input type="text" placeholder="bantu run ..." value="" />
+            <button class="run-btn">Run</button>
+            <button class="stop-btn">Stop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">The main terminal. Green-on-black. Quick action buttons at top. Type commands at bottom. Real-time server output.</div>
+  </div>
+
+  <div class="screen-wrapper">
+    <div class="screen-label">4. File Manager</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="files-screen">
+          <div class="files-topbar">
+            <span class="title">Bantu Projects</span>
+            <button class="add-btn">+</button>
+          </div>
+          <div class="file-list">
+            <div class="file-item">
+              <div class="file-icon">&#127760;</div>
+              <div class="file-info">
+                <div class="file-name">bantuddns.b</div>
+                <div class="file-meta">2.4 KB &middot; Jun 28, 14:30</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn run">Run</button>
+                <button class="file-action-btn edit">Edit</button>
+                <button class="file-action-btn del">Del</button>
+              </div>
+            </div>
+            <div class="file-item">
+              <div class="file-icon">&#128187;</div>
+              <div class="file-info">
+                <div class="file-name">server.b</div>
+                <div class="file-meta">1.1 KB &middot; Jun 28, 14:30</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn run">Run</button>
+                <button class="file-action-btn edit">Edit</button>
+                <button class="file-action-btn del">Del</button>
+              </div>
+            </div>
+            <div class="file-item">
+              <div class="file-icon">&#128451;</div>
+              <div class="file-info">
+                <div class="file-name">db.b</div>
+                <div class="file-meta">0.8 KB &middot; Jun 28, 14:30</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn run">Run</button>
+                <button class="file-action-btn edit">Edit</button>
+                <button class="file-action-btn del">Del</button>
+              </div>
+            </div>
+            <div class="file-item">
+              <div class="file-icon">&#128075;</div>
+              <div class="file-info">
+                <div class="file-name">hello.b</div>
+                <div class="file-meta">0.3 KB &middot; Jun 28, 14:30</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn run">Run</button>
+                <button class="file-action-btn edit">Edit</button>
+                <button class="file-action-btn del">Del</button>
+              </div>
+            </div>
+            <div class="file-item">
+              <div class="file-icon">&#9889;</div>
+              <div class="file-info">
+                <div class="file-name">bench.b</div>
+                <div class="file-meta">0.9 KB &middot; Jun 28, 14:30</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn run">Run</button>
+                <button class="file-action-btn edit">Edit</button>
+                <button class="file-action-btn del">Del</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">Browse all .b files. Run to execute, Edit to modify, + to create new. Shows size and last modified time.</div>
+  </div>
+
+  <div class="screen-wrapper">
+    <div class="screen-label">5. Dashboard</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="dashboard-screen">
+          <div class="dashboard-urlbar">
+            <button class="url-btn">&#8592;</button>
+            <input class="url-input" value="http://localhost:8080" />
+            <button class="url-btn">&#9654;</button>
+            <button class="url-btn">&#8635;</button>
+          </div>
+          <div class="dashboard-webview">
+            <div class="dashboard-content">
+              <h1>BantuDroid DDNS</h1>
+              <div class="status-box">
+                <div class="status-label">Current IP</div>
+                <div class="status-value">197.250.46.88</div>
+              </div>
+              <div class="status-box">
+                <div class="status-label">Domain</div>
+                <div class="status-value">mysite.duckdns.org</div>
+              </div>
+              <div class="status-box">
+                <div class="status-label">Status</div>
+                <div class="status-value" style="color: #69F0AE;">Monitoring</div>
+              </div>
+              <div style="margin-top: 12px;">
+                <div class="link">/api/status - API Status</div>
+                <div class="link" style="margin-top: 6px;">/api/force-update - Force Update</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">WebView showing your server's admin dashboard. Shows current IP, domain, monitoring status. URL bar to navigate.</div>
+  </div>
+
+  <div class="screen-wrapper">
+    <div class="screen-label">6. Settings</div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-content">
+        <div class="settings-screen">
+          <div class="settings-title">Settings</div>
+          <div class="settings-section">
+            <div class="settings-section-title">Bantu Engine</div>
+            <div class="settings-row">
+              <span class="label">Engine Version</span>
+              <span class="value">v1.2.0</span>
+            </div>
+            <button class="settings-btn danger">Reinstall Engine</button>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Server</div>
+            <div class="settings-row">
+              <span class="label">Default Port</span>
+              <span class="value">8080</span>
+            </div>
+            <div class="settings-row">
+              <span class="label">Auto-start on boot</span>
+              <div class="toggle-off"></div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Dynamic DNS</div>
+            <input class="settings-input" placeholder="Domain" value="mysite.duckdns.org" />
+            <input class="settings-input" placeholder="API Token" type="password" value="abcdefgh" />
+            <button class="settings-btn save">Save DDNS Settings</button>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">About</div>
+            <div class="settings-about">BantuDroid v1.0.0<br>A Bantu language runtime for Android<br><br>github.com/AsseySilivestir/Bantu</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-desc">Configure engine, server port, auto-start, DDNS credentials. About section links to the repo.</div>
+  </div>
+
+</div>
+
+<div class="flow-section">
+  <h2>Steps to Get Running</h2>
+  <div class="flow-steps">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text">Cross-compile Bantu for arm64</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text">Open in Android Studio</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text">Connect phone & Run</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">4</div><div class="step-text">Tap Install Engine</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">5</div><div class="step-text">Open Terminal</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">6</div><div class="step-text">Tap DDNS button</div></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><div class="step-num">7</div><div class="step-text">Phone = Global Server!</div></div>
+  </div>
+</div>
+
+</body>
+</html>
