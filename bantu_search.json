@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/github-linguist/linguist",
+    "name": "Linguist - GitHub",
+    "snippet": "Linguist is a Ruby library so you will need a recent version of Ruby installed. There are known problems with the macOS/Xcode supplied version of Ruby that ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/orgs/community/discussions/186562",
+    "name": "programming language on GitHub · community · Discussion #186562",
+    "snippet": "To get your programming language recognized by GitHub, you need to work with GitHub Linguist, which is what GitHub uses to detect languages and apply syntax ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/rust/comments/1ri8zlg/linguist_detect_programming_language_by_extension",
+    "name": "detect programming language by extension, filename or content : r/rust",
+    "snippet": "This library uses the original Github Linguist language definitions, but generates the definitions at compile time, meaning no runtime file ...",
+    "host_name": "www.reddit.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/blob/main/docs/how-linguist-works.md",
+    "name": "linguist/docs/how-linguist-works.md at main - GitHub",
+    "snippet": "Linguist takes the list of languages it knows from languages.yml and uses a number of methods to try and determine the language used by each file.",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/cicirello/configuring-githubs-linguist-to-improve-repository-language-reporting-295b",
+    "name": "Configuring GitHub's Linguist to Improve Repository Language",
+    "snippet": "In this post, I explain how to configure GitHub's Linguist within your repository to enable more accurate and more relevant repository language reporting.",
+    "host_name": "dev.to",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://blog.bolajiayodeji.com/github-repository-language-overview",
+    "name": "GitHub Repository Language Overview - Bolaji Ayodeji's Blog",
+    "snippet": "Basically, Linguist is a library that runs on every GitHub repository. It checks every file and directory and detects the programming language ...",
+    "host_name": "blog.bolajiayodeji.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/blob/master/lib/linguist/language.rb",
+    "name": "linguist/lib/linguist/language.rb at main - GitHub",
+    "snippet": "# Returns all matching Languages or [] if none were found. def self.find_by_extension(filename). # find the first extension with language definitions.",
+    "host_name": "github.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://blog.jakelee.co.uk/adding-github-language-with-linguist",
+    "name": "How to add a new programming language to GitHub: an introduction",
+    "snippet": "Linguist is an open source project run by & used on GitHub itself (a “production dependency”), and watched over very attentively by at least one ...",
+    "host_name": "blog.jakelee.co.uk",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/issues/4435",
+    "name": "Allow overriding with custom language name and/or implementation",
+    "snippet": "User-defined languages aren't a possibility, given the mechanics of Linguist and GitHub's indexing engine, and although I don't purport to know ...",
+    "host_name": "github.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://aldomann.com/blog/2020/12/29/override-github-linguist-with-gitattributes-files.html",
+    "name": "Override GitHub Linguist with gitattributes files - Alfredo Hernández",
+    "snippet": "Linguist is, in short, the library used on GitHub to detect blob languages and generate language breakdown graphs. It takes the list of ...",
+    "host_name": "aldomann.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

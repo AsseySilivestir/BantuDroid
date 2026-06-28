@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/github-linguist/linguist",
+    "name": "Linguist - GitHub",
+    "snippet": "This library is used on GitHub.com to detect blob languages, ignore binary or vendored files, suppress generated files in diffs, and generate language breakdown ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/blob/main/CONTRIBUTING.md",
+    "name": "linguist/CONTRIBUTING.md at main - GitHub",
+    "snippet": "Before you can start contributing to Linguist, you'll need to set up your environment first. Clone the repo and run script/bootstrap to install its dependencies ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://blog.jakelee.co.uk/adding-github-language-with-linguist",
+    "name": "How to add a new programming language to GitHub: an introduction",
+    "snippet": "Here's everything you need to submit a request for a new language to be added. I'd recommend gathering all this before actually implementing the ...",
+    "host_name": "blog.jakelee.co.uk",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/ProgrammingLanguages/comments/1m2xx4h/custom_languages_on_github",
+    "name": "Custom languages on GitHub : r/ProgrammingLanguages - Reddit",
+    "snippet": "If you need to add a custom grammar, you basically need to send a pull request to the Linguist project. Apparently they only consider inclusion ...",
+    "host_name": "www.reddit.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/cicirello/configuring-githubs-linguist-to-improve-repository-language-reporting-295b",
+    "name": "Configuring GitHub's Linguist to Improve Repository Language",
+    "snippet": "In this post, I explain how to configure GitHub's Linguist within your repository to enable more accurate and more relevant repository language reporting.",
+    "host_name": "dev.to",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/37888732/custom-language-in-github-repository",
+    "name": "Custom language in github repository - Stack Overflow",
+    "snippet": "If your language was already used in hundred of repositories on github.com, you could add support for it in the Linguist open source project.",
+    "host_name": "stackoverflow.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/discussions/6357",
+    "name": "Linguist doesn't update language on new branch? #6357 - GitHub",
+    "snippet": "Linguist doesn't update language on new branch? No. Linguist only runs against the default branch, which in your case is main .",
+    "host_name": "github.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/orgs/community/discussions/186562",
+    "name": "programming language on GitHub · community · Discussion #186562",
+    "snippet": "Submit to Linguist: Fork the Linguist repository , and add your language syntax rules. You'll need to create definitions for how different components (like ...",
+    "host_name": "github.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/github-linguist/linguist/blob/main/docs/how-linguist-works.md",
+    "name": "linguist/docs/how-linguist-works.md at main - GitHub",
+    "snippet": "Linguist takes the list of languages it knows from languages.yml and uses a number of methods to try and determine the language used by each file.",
+    "host_name": "github.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://devactivity.com/insights/beyond-gitattributes-getting-github-to-recognize-your-new-programming-language-for-better-development-overview",
+    "name": "GitHub Language Recognition: Add Your Custom  - devActivity",
+    "snippet": "The definitive path to getting a new language recognized by GitHub is to contribute it directly to the github-linguist/linguist repository.",
+    "host_name": "devactivity.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
