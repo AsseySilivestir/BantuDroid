@@ -19,11 +19,14 @@ import java.util.List;
  *
  * ANDROID EXECUTION MODEL (critical for Android 10+):
  * - /data/data/pkg/files/ is mounted NOEXEC on Android 10+
- *   → chmod 755 does NOT help, kernel blocks exec() at VFS level
- * - /data/app/…/lib/ (nativeLibraryDir) IS executable
- *   → Android extracts lib/*.so from APK here with correct SELinux context
- * - We ship libbantu.so via jniLibs/ → it lands in nativeLibraryDir
- * - If nativeLibraryDir fails, we try codeCacheDir as a last resort
+ *   -> chmod 755 does NOT help, kernel blocks exec() at VFS level
+ * - /data/app/.../lib/ (nativeLibraryDir) IS executable
+ *   -> Android extracts lib/*.so from APK here with correct SELinux context
+ * - We ship libbantu.so via jniLibs/ -> it lands in nativeLibraryDir
+ * - android:extractNativeLibs="true" in manifest + useLegacyPackaging in gradle
+ *   ensures .so files are actually extracted to disk (not kept in APK)
+ * - We use direct ProcessBuilder execution (NOT /system/bin/sh -c)
+ * - As fallback, we use JNI BantuBridge which does fork()+execv() from native code
  */
 public class BantuEngine {
 
@@ -40,30 +43,46 @@ public class BantuEngine {
     private final SharedPreferences prefs;
     private boolean installed = false;
 
-    /** Cached binary path — resolved once, reused for all executions */
+    /** Cached binary path -- resolved once, reused for all executions */
     private String cachedBinaryPath = null;
+
+    /** JNI bridge for fork+execv fallback */
+    private BantuBridge bridge;
+
+    /** Static app context for BantuBridge */
+    private static Context appContext;
 
     public BantuEngine(Context context) {
         this.context = context.getApplicationContext();
+        appContext = this.context;
         this.binDir = new File(context.getFilesDir(), "bin");
         this.projectsDir = new File(context.getFilesDir(), "projects");
         this.logDir = new File(context.getFilesDir(), "logs");
         this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
+        // Initialize JNI bridge
+        BantuBridge.init();
+        this.bridge = new BantuBridge();
     }
 
-    // ──────────────────────────────────────────────────────────────
+    /** Get app context (used by BantuBridge) */
+    public static Context getAppContext() {
+        return appContext;
+    }
+
+    // -----------------------------------------------------------------
     // Binary Path Resolution (the critical fix)
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
 
     /**
      * Find the absolute path to the Bantu binary.
      *
      * Strategy (in order of reliability):
-     * 1. nativeLibraryDir/libbantu.so — Android-extracted, SELinux allows exec
-     * 2. files/bin/bantu — our manually extracted copy (needs chmod, may be noexec)
-     * 3. codeCacheDir/bantu — alternative writable location (may allow exec)
+     * 1. nativeLibraryDir/libbantu.so -- Android-extracted, SELinux allows exec
+     * 2. files/bin/bantu -- our manually extracted copy (needs chmod, may be noexec)
+     * 3. codeCacheDir/bantu -- alternative writable location (may allow exec)
      *
-     * We do NOT check canExecute() because Java's File.canExecute() uses
+     * We do NOT require canExecute() because Java's File.canExecute() uses
      * access(X_OK) which may return false due to SELinux even when the file
      * IS actually executable via exec(). We just check exists() and try chmod.
      */
@@ -72,16 +91,18 @@ public class BantuEngine {
             return cachedBinaryPath;
         }
 
-        Log.i(TAG, "Resolving Bantu binary path...");
+        Log.i(TAG, "=== Resolving Bantu binary path ===");
 
-        // ── Strategy 1: nativeLibraryDir (BEST — always executable on Android) ──
+        // -- Strategy 1: nativeLibraryDir (BEST -- always executable on Android) --
         try {
             String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
             if (nativeLibDir != null) {
                 File libBinary = new File(nativeLibDir, "libbantu.so");
+                Log.i(TAG, "Checking nativeLibraryDir: " + libBinary.getAbsolutePath());
+                Log.i(TAG, "  exists=" + libBinary.exists() + " canRead=" + libBinary.canRead() + " canExecute=" + libBinary.canExecute());
+
                 if (libBinary.exists()) {
-                    Log.i(TAG, "Found binary in nativeLibraryDir: " + libBinary.getAbsolutePath());
-                    // Try chmod just in case (usually already 755)
+                    Log.i(TAG, "FOUND binary in nativeLibraryDir: " + libBinary.getAbsolutePath());
                     chmodBinary(libBinary);
                     cachedBinaryPath = libBinary.getAbsolutePath();
                     return cachedBinaryPath;
@@ -91,9 +112,13 @@ public class BantuEngine {
                     File libDir = new File(nativeLibDir);
                     if (libDir.exists() && libDir.isDirectory()) {
                         String[] contents = libDir.list();
-                        if (contents != null) {
+                        if (contents != null && contents.length > 0) {
                             Log.i(TAG, "nativeLibraryDir contents: " + String.join(", ", contents));
+                        } else {
+                            Log.w(TAG, "nativeLibraryDir is EMPTY! extractNativeLibs may be false");
                         }
+                    } else {
+                        Log.w(TAG, "nativeLibraryDir directory does not exist: " + nativeLibDir);
                     }
                 }
             }
@@ -101,7 +126,7 @@ public class BantuEngine {
             Log.w(TAG, "nativeLibraryDir check failed", e);
         }
 
-        // ── Strategy 2: files/bin/bantu with chmod ──
+        // -- Strategy 2: files/bin/bantu with chmod --
         File filesBinary = new File(binDir, BINARY_NAME);
         if (filesBinary.exists()) {
             Log.i(TAG, "Found binary in files/bin: " + filesBinary.getAbsolutePath());
@@ -110,7 +135,7 @@ public class BantuEngine {
             return cachedBinaryPath;
         }
 
-        // ── Strategy 3: codeCacheDir ──
+        // -- Strategy 3: codeCacheDir --
         try {
             File codeCacheDir = context.getCodeCacheDir();
             File cacheBinary = new File(codeCacheDir, "bantu");
@@ -124,29 +149,27 @@ public class BantuEngine {
             Log.w(TAG, "codeCacheDir check failed", e);
         }
 
-        // ── No binary found anywhere ──
+        // -- No binary found anywhere --
         Log.e(TAG, "Bantu binary not found in any location!");
         return null;
     }
 
     /**
      * Run chmod 755 on the binary file. This is a best-effort operation.
-     * On noexec mounts, chmod succeeds but exec() still fails — that's OK,
-     * we'll try the next strategy.
      */
     private void chmodBinary(File binary) {
         try {
             // Java API
-            binary.setExecutable(true, false);
-            binary.setReadable(true, false);
+            boolean setExec = binary.setExecutable(true, false);
+            boolean setRead = binary.setReadable(true, false);
+            Log.i(TAG, "Java setExecutable(" + binary.getAbsolutePath() + ") = " + setExec);
 
-            // Shell chmod — more reliable on some Android versions
+            // Shell chmod
             Process p = new ProcessBuilder("/system/bin/chmod", "755",
                 binary.getAbsolutePath()).start();
-            p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
-
+            int chmodResult = p.waitFor();
             Log.i(TAG, "chmod 755 on " + binary.getAbsolutePath() +
-                " → canExecute=" + binary.canExecute());
+                " -> exit=" + chmodResult + ", canExecute=" + binary.canExecute());
         } catch (Exception e) {
             Log.w(TAG, "chmod failed for " + binary.getAbsolutePath(), e);
         }
@@ -165,14 +188,10 @@ public class BantuEngine {
         return path;
     }
 
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
     // Installation
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
 
-    /**
-     * Install the Bantu engine by extracting the binary and projects
-     * from APK assets. Must be called on first launch or after updates.
-     */
     public void install(InstallListener listener) {
         new Thread(() -> {
             try {
@@ -188,8 +207,9 @@ public class BantuEngine {
                     ? new File(nativeLibDir, "libbantu.so") : null;
 
                 if (libBinary != null && libBinary.exists()) {
-                    Log.i(TAG, "Binary already in nativeLibraryDir — no extraction needed");
+                    Log.i(TAG, "Binary already in nativeLibraryDir -- no extraction needed");
                     chmodBinary(libBinary);
+                    listener.onProgress("Binary ready in nativeLibraryDir");
                 } else {
                     // Fallback: extract from assets to files/bin/
                     Log.i(TAG, "libbantu.so not in nativeLibraryDir, extracting from assets...");
@@ -205,7 +225,7 @@ public class BantuEngine {
                     extractAsset(assetPath, binary);
                     chmodBinary(binary);
 
-                    // Also try copying to codeCacheDir (may be executable on some devices)
+                    // Also try copying to codeCacheDir
                     try {
                         File cacheBinary = new File(context.getCodeCacheDir(), "bantu");
                         copyFile(binary, cacheBinary);
@@ -243,23 +263,14 @@ public class BantuEngine {
         }).start();
     }
 
-    /**
-     * Quick check if the engine binary exists (in any location).
-     */
     public boolean isInstalled() {
         return resolveBinaryPath() != null;
     }
 
-    /**
-     * Get the installed engine version string.
-     */
     public String getInstalledVersion() {
         return prefs.getString(KEY_VERSION, "unknown");
     }
 
-    /**
-     * Force reinstall (e.g., after an app update with new binary).
-     */
     public void reinstall(InstallListener listener) {
         deleteRecursive(binDir);
         prefs.edit().clear().apply();
@@ -268,9 +279,9 @@ public class BantuEngine {
         install(listener);
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Running Bantu
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
+    // Running Bantu — uses JNI bridge or direct ProcessBuilder
+    // -----------------------------------------------------------------
 
     /**
      * Run a .b file with the Bantu interpreter.
@@ -289,19 +300,8 @@ public class BantuEngine {
         String binaryPath = requireBinaryPath();
         Log.i(TAG, "Running: " + binaryPath + " run " + file.getAbsolutePath());
 
-        ProcessBuilder pb = new ProcessBuilder(binaryPath, "run", file.getAbsolutePath());
-        pb.directory(projectsDir);
-        pb.redirectErrorStream(true);
-        setupEnvironment(pb);
-
-        try {
-            Process process = pb.start();
-            return new BantuProcess(process, bantuFile);
-        } catch (IOException e) {
-            // If direct execution fails (noexec mount), try via /system/bin/sh
-            Log.w(TAG, "Direct exec failed, trying via shell wrapper: " + e.getMessage());
-            return runViaShell(binaryPath, "run", file.getAbsolutePath());
-        }
+        // Try JNI bridge first (more reliable on MIUI/Xiaomi), then ProcessBuilder
+        return executeBinary(binaryPath, new String[]{"run", file.getAbsolutePath()});
     }
 
     /**
@@ -312,68 +312,161 @@ public class BantuEngine {
         ensureInstalled();
 
         String binaryPath = requireBinaryPath();
+        Log.i(TAG, "Executing: " + binaryPath + " " + String.join(" ", args));
+
+        return executeBinary(binaryPath, args);
+    }
+
+    /**
+     * Run a command in the projects directory (for terminal-style operations).
+     * Parses "bantu <args>" and executes directly via ProcessBuilder or JNI bridge.
+     * NEVER uses /system/bin/sh -c (causes Permission denied on Android 10+).
+     */
+    public BantuProcess runShellCommand(String command) throws IOException {
+        ensureInstalled();
+
+        String binaryPath = requireBinaryPath();
+        String trimmed = command.trim();
+
+        // Parse "bantu <args>" or just "<args>"
+        if (trimmed.startsWith("bantu ")) {
+            trimmed = trimmed.substring("bantu ".length()).trim();
+        } else if (trimmed.equals("bantu")) {
+            trimmed = "--help";
+        }
+
+        // Split args respecting quoted strings
+        List<String> argList = parseArgs(trimmed);
+        String[] args = argList.toArray(new String[0]);
+
+        Log.i(TAG, "Shell command: " + binaryPath + " " + String.join(" ", args));
+
+        return executeBinary(binaryPath, args);
+    }
+
+    /**
+     * Core execution method. Tries JNI bridge first, then ProcessBuilder.
+     * Both approaches execute the binary DIRECTLY (no /system/bin/sh wrapper).
+     */
+    private BantuProcess executeBinary(String binaryPath, String[] args) throws IOException {
+        // Try JNI bridge first (fork+execv from native code bypasses SELinux)
+        if (BantuBridge.isJniAvailable()) {
+            try {
+                Log.i(TAG, "Attempting JNI bridge execution...");
+                return bridge.execute(binaryPath, args, projectsDir.getAbsolutePath());
+            } catch (IOException e) {
+                Log.w(TAG, "JNI bridge execution failed, falling back to ProcessBuilder: " + e.getMessage());
+            }
+        }
+
+        // Fallback: direct ProcessBuilder execution (works when binary is in nativeLibraryDir)
+        try {
+            return executeViaProcessBuilder(binaryPath, args);
+        } catch (IOException e) {
+            Log.e(TAG, "ProcessBuilder execution also failed: " + e.getMessage());
+
+            // Last resort: try a different binary location
+            String fallback = getFallbackBinaryPath(binaryPath);
+            if (fallback != null) {
+                Log.i(TAG, "Trying fallback binary path: " + fallback);
+                try {
+                    return executeViaProcessBuilder(fallback, args);
+                } catch (IOException e2) {
+                    Log.e(TAG, "Fallback also failed: " + e2.getMessage());
+                }
+            }
+
+            throw new IOException(
+                "Cannot execute Bantu binary.\n" +
+                "Path tried: " + binaryPath + "\n" +
+                "Error: " + e.getMessage() + "\n\n" +
+                "This may be caused by Android security restrictions (SELinux).\n" +
+                "Please try: Settings > Apps > BantuDroid > Storage > Clear Data, then reopen.");
+        }
+    }
+
+    /**
+     * Execute via ProcessBuilder with direct binary path.
+     * NO /system/bin/sh wrapper — that's what causes Permission denied.
+     */
+    private BantuProcess executeViaProcessBuilder(String binaryPath, String[] args) throws IOException {
         String[] cmd = new String[args.length + 1];
         cmd[0] = binaryPath;
         System.arraycopy(args, 0, cmd, 1, args.length);
 
-        Log.i(TAG, "Running: " + String.join(" ", cmd));
+        Log.i(TAG, "ProcessBuilder: " + String.join(" ", cmd));
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(projectsDir);
         pb.redirectErrorStream(true);
         setupEnvironment(pb);
 
-        try {
-            return new BantuProcess(pb.start(), String.join(" ", args));
-        } catch (IOException e) {
-            Log.w(TAG, "Direct exec failed, trying via shell wrapper: " + e.getMessage());
-            return runViaShell(binaryPath, args);
-        }
+        Process process = pb.start();
+        return new BantuProcess(process, String.join(" ", args));
     }
 
     /**
-     * Run a command in the projects directory (for shell-style operations).
+     * If the current binary path is from one strategy, return the path from another.
      */
-    public BantuProcess runShellCommand(String command) throws IOException {
-        ensureInstalled();
+    private String getFallbackBinaryPath(String currentPath) {
+        String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
 
-        String binaryPath = requireBinaryPath();
-        // Always use shell wrapper for terminal commands — it handles PATH etc.
-        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c",
-            binaryPath + " " + command);
-        pb.directory(projectsDir);
-        pb.redirectErrorStream(true);
-        setupEnvironment(pb);
+        if (currentPath.contains("lib") && currentPath.endsWith("libbantu.so")) {
+            // Current is nativeLibraryDir, try files/bin
+            File fallback = new File(binDir, BINARY_NAME);
+            if (fallback.exists() && !fallback.getAbsolutePath().equals(currentPath)) {
+                return fallback.getAbsolutePath();
+            }
+        } else {
+            // Current is files/bin or elsewhere, try nativeLibraryDir
+            if (nativeLibDir != null) {
+                File fallback = new File(nativeLibDir, "libbantu.so");
+                if (fallback.exists() && !fallback.getAbsolutePath().equals(currentPath)) {
+                    return fallback.getAbsolutePath();
+                }
+            }
+        }
 
-        return new BantuProcess(pb.start(), command);
+        return null;
     }
 
     /**
-     * Fallback: run the binary via /system/bin/sh.
-     * This wraps the call in "sh -c 'chmod 755 binary && binary args'"
-     * which sometimes works when direct ProcessBuilder exec doesn't.
+     * Simple argument parser that handles quoted strings.
      */
-    private BantuProcess runViaShell(String binaryPath, String... args) throws IOException {
-        StringBuilder cmd = new StringBuilder();
-        cmd.append("/system/bin/chmod 755 ").append(binaryPath).append(" && ");
-        cmd.append(binaryPath);
-        for (String arg : args) {
-            cmd.append(" '").append(arg.replace("'", "'\\''")).append("'");
+    private List<String> parseArgs(String args) {
+        List<String> result = new ArrayList<>();
+        if (args == null || args.isEmpty()) return result;
+
+        StringBuilder current = new StringBuilder();
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+
+        for (int i = 0; i < args.length(); i++) {
+            char c = args.charAt(i);
+
+            if (c == '\'' && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+            } else if (c == '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+            } else if (Character.isWhitespace(c) && !inSingleQuote && !inDoubleQuote) {
+                if (current.length() > 0) {
+                    result.add(current.toString());
+                    current = new StringBuilder();
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        if (current.length() > 0) {
+            result.add(current.toString());
         }
 
-        Log.i(TAG, "Shell fallback: " + cmd);
-
-        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", cmd.toString());
-        pb.directory(projectsDir);
-        pb.redirectErrorStream(true);
-        setupEnvironment(pb);
-
-        return new BantuProcess(pb.start(), String.join(" ", args));
+        return result;
     }
 
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
     // File Management
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
 
     public List<BantuFile> listProjects() {
         List<BantuFile> files = new ArrayList<>();
@@ -429,9 +522,9 @@ public class BantuEngine {
     public File getProjectsDir() { return projectsDir; }
     public File getLogDir() { return logDir; }
 
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
     // Internal helpers
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
 
     private void ensureInstalled() throws IllegalStateException {
         if (!isInstalled()) {
@@ -448,10 +541,20 @@ public class BantuEngine {
 
         pb.environment().put("HOME", context.getFilesDir().getAbsolutePath());
         pb.environment().put("BANTU_HOME", context.getFilesDir().getAbsolutePath());
-        pb.environment().put("PATH", binaryDir + ":" +
-            System.getenv("PATH"));
+        pb.environment().put("PATH", binaryDir + ":" + System.getenv("PATH"));
         pb.environment().put("TERM", "xterm-256color");
         pb.environment().put("LANG", "en_US.UTF-8");
+
+        // Set LD_LIBRARY_PATH so the bantu binary can find system shared libs
+        String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+        if (nativeLibDir != null) {
+            String existing = System.getenv("LD_LIBRARY_PATH");
+            if (existing != null && !existing.isEmpty()) {
+                pb.environment().put("LD_LIBRARY_PATH", nativeLibDir + ":" + existing);
+            } else {
+                pb.environment().put("LD_LIBRARY_PATH", nativeLibDir);
+            }
+        }
     }
 
     private String getSupportedAbi() {
@@ -558,9 +661,9 @@ public class BantuEngine {
         file.delete();
     }
 
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
     // Inner classes & interfaces
-    // ──────────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------
 
     public interface InstallListener {
         void onProgress(String message);

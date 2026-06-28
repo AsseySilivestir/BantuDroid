@@ -26,6 +26,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BantuDroid"
         android:usesCleartextTraffic="true"
+        android:extractNativeLibs="true"
         tools:targetApi="34">
 
         <!-- Main launcher activity -->

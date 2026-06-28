@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/home/z/my-project/BantuDroid/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/z/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/z/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "banturun::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "banturun",
+      "output": "/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/arm64-v8a/libbanturun.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

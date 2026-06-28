@@ -1,0 +1,20 @@
+                        -H/home/z/my-project/BantuDroid/app/src/main/cpp
+-DCMAKE_SYSTEM_NAME=Android
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+-DCMAKE_SYSTEM_VERSION=24
+-DANDROID_PLATFORM=android-24
+-DANDROID_ABI=x86_64
+-DCMAKE_ANDROID_ARCH_ABI=x86_64
+-DANDROID_NDK=/home/z/android-ndk-r26d
+-DCMAKE_ANDROID_NDK=/home/z/android-ndk-r26d
+-DCMAKE_TOOLCHAIN_FILE=/home/z/android-ndk-r26d/build/cmake/android.toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=/home/z/android-sdk/cmake/3.22.1/bin/ninja
+-DCMAKE_CXX_FLAGS=-std=c++17
+-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64
+-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64
+-DCMAKE_BUILD_TYPE=Debug
+-B/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/x86_64
+-GNinja
+-DANDROID_STL=c++_shared
+                        Build command args: []
+                        Version: 2

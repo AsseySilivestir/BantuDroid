@@ -5,6 +5,7 @@ plugins {
 android {
     namespace 'com.bantu.droid'
     compileSdk 34
+    ndkVersion '26.3.11579264'
 
     defaultConfig {
         applicationId "com.bantu.droid"
@@ -15,6 +16,22 @@ android {
 
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+
+        // Build the JNI bridge library (libbanturun.so)
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17'
+                arguments '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+
+    // CMake build for JNI bridge
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
         }
     }
 
@@ -35,15 +52,26 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // Prevent Android from compressing the binary
-    aaptOptions {
-        noCompress 'bantu'
+    // Force extraction of native libraries (critical for executing libbantu.so)
+    // Without this, AGP 8.2+ defaults to extractNativeLibs=false and .so files
+    // stay compressed in the APK — never extracted to nativeLibraryDir
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     sourceSets {
         main {
             assets.srcDirs = ['src/main/assets']
             jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    // Do not strip symbols from native libs — helps debugging
+    buildTypes.all {
+        ndk {
+            debugSymbolLevel 'FULL'
         }
     }
 }

@@ -1,0 +1,3 @@
+/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/x86_64/CMakeFiles/banturun.dir
+/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/x86_64/CMakeFiles/edit_cache.dir
+/home/z/my-project/BantuDroid/app/.cxx/Debug/2g3t1x1z/x86_64/CMakeFiles/rebuild_cache.dir

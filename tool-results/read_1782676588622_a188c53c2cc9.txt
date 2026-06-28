@@ -1,0 +1,2002 @@
+     1→/**
+     2→ * Bantu Language - Main Entry Point
+     3→ *
+     4→ * Simple CLI Commands:
+     5→ *   bantu                    Start REPL
+     6→ *   bantu run <file.b>       Run a Bantu file
+     7→ *   bantu run                Run main.b in current directory
+     8→ *   bantu build <file.b>     Compile to standalone executable
+     9→ *   bantu build              Build main.b in current directory
+    10→ *   bantu init <name>        Create a new Bantu project
+    11→ *   bantu new <name>         Create a new Bantu project (alias)
+    12→ *   bantu --help             Show help
+    13→ *   bantu --version          Show version
+    14→ *
+    15→ * Build with CMake:
+    16→ *   mkdir build && cd build
+    17→ *   cmake .. -DCMAKE_BUILD_TYPE=Release
+    18→ *   make -j$(nproc)
+    19→ */
+    20→
+    21→#include "types.hpp"
+    22→#include "lexer.hpp"
+    23→#include "parser.hpp"
+    24→#include "evaluator.hpp"
+    25→#include "environment.hpp"
+    26→#include "server.hpp"
+    27→#include "init_templates.hpp"
+    28→#include "package_manager.hpp"
+    29→
+    30→#include <iostream>
+    31→#include <fstream>
+    32→#include <sstream>
+    33→#include <string>
+    34→#include <vector>
+    35→#include <chrono>
+    36→#include <csignal>
+    37→#include <cstdlib>
+    38→#include <cctype>
+    39→#include <bitset>
+    40→#include <cmath>
+    41→#include <algorithm>
+    42→#include <filesystem>     // C++17 — cross-platform mkdir/rm/cp (replaces POSIX shell calls)
+    43→
+    44→// ─── Platform-specific POSIX headers ───
+    45→#ifdef _WIN32
+    46→    #include <direct.h>      // _getcwd
+    47→    #include <sys/stat.h>    // stat (works on Windows too)
+    48→    #define getcwd _getcwd
+    49→#elif defined(__APPLE__)
+    50→    #include <mach-o/dyld.h>  // _NSGetExecutablePath
+    51→    #include <sys/stat.h>
+    52→    #include <unistd.h>
+    53→#else
+    54→    #include <sys/stat.h>
+    55→    #include <unistd.h>
+    56→#endif
+    57→
+    58→const std::string BANTU_VERSION = "1.2.2";
+    59→const std::string BANTU_LANG = "Bantu";
+    60→
+    61→// ─── Helpers ──────────────────────────────────────────────────────────
+    62→
+    63→bool fileExists(const std::string& path) {
+    64→    struct stat buffer;
+    65→    return (stat(path.c_str(), &buffer) == 0);
+    66→}
+    67→
+    68→// ─── Cross-platform filesystem helpers (C++17 <filesystem>) ───────────
+    69→// These replace POSIX-only `system("mkdir -p ...")` / `system("rm -rf ...")`
+    70→// / `system("cp ...")` calls so the installer works identically on Windows,
+    71→// macOS, and Linux without needing a POSIX shell (no Git Bash / WSL required).
+    72→
+    73→namespace fs = std::filesystem;
+    74→
+    75→// Recursively create a directory (no-op if it already exists). Returns true
+    76→// on success or if the directory already existed.
+    77→bool fsMkdirP(const std::string& path) {
+    78→    if (path.empty()) return true;
+    79→    std::error_code ec;
+    80→    fs::create_directories(fs::path(path), ec);
+    81→    return !ec;
+    82→}
+    83→
+    84→// Recursively remove a directory tree (no-op if it doesn't exist).
+    85→bool fsRmRf(const std::string& path) {
+    86→    if (path.empty()) return true;
+    87→    std::error_code ec;
+    88→    fs::remove_all(fs::path(path), ec);
+    89→    return !ec;
+    90→}
+    91→
+    92→// Copy a single file. Overwrites the destination if it exists.
+    93→bool fsCopyFile(const std::string& src, const std::string& dst) {
+    94→    std::error_code ec;
+    95→    fs::copy_file(fs::path(src), fs::path(dst),
+    96→                  fs::copy_options::overwrite_existing, ec);
+    97→    return !ec;
+    98→}
+    99→
+   100→// Recursively copy a directory tree. Creates dst if it doesn't exist.
+   101→bool fsCopyDir(const std::string& src, const std::string& dst) {
+   102→    std::error_code ec;
+   103→    fs::copy(fs::path(src), fs::path(dst),
+   104→             fs::copy_options::recursive | fs::copy_options::overwrite_existing,
+   105→             ec);
+   106→    return !ec;
+   107→}
+   108→
+   109→// Copy all files matching a given extension from srcDir into dstDir.
+   110→// Used to copy *.b source files into the Android assets folder without
+   111→// relying on a shell glob.
+   112→int fsCopyByExtension(const std::string& srcDir, const std::string& dstDir,
+   113→                      const std::string& extWithDot) {
+   114→    if (!fsMkdirP(dstDir)) return 0;
+   115→    int copied = 0;
+   116→    std::error_code ec;
+   117→    for (auto& entry : fs::directory_iterator(fs::path(srcDir), ec)) {
+   118→        if (ec) break;
+   119→        if (!entry.is_regular_file()) continue;
+   120→        if (entry.path().extension() == extWithDot) {
+   121→            std::string dst = dstDir + "/" + entry.path().filename().string();
+   122→            if (fsCopyFile(entry.path().string(), dst)) copied++;
+   123→        }
+   124→    }
+   125→    return copied;
+   126→}
+   127→
+   128→// Copy a single named file from srcDir to dstDir if it exists.
+   129→bool fsCopyNamedIfExists(const std::string& srcDir, const std::string& dstDir,
+   130→                         const std::string& filename) {
+   131→    std::string src = srcDir + "/" + filename;
+   132→    if (!fileExists(src)) return false;
+   133→    if (!fsMkdirP(dstDir)) return false;
+   134→    return fsCopyFile(src, dstDir + "/" + filename);
+   135→}
+   136→
+   137→// Recursively copy a named subdirectory (e.g. "public") from srcDir into dstDir.
+   138→bool fsCopyNamedDirIfExists(const std::string& srcDir, const std::string& dstDir,
+   139→                            const std::string& dirname) {
+   140→    std::string src = srcDir + "/" + dirname;
+   141→    if (!fs::is_directory(fs::path(src))) return false;
+   142→    if (!fsMkdirP(dstDir)) return false;
+   143→    return fsCopyDir(src, dstDir + "/" + dirname);
+   144→}
+   145→
+   146→std::string readFile(const std::string& path) {
+   147→    std::ifstream file(path);
+   148→    if (!file.is_open()) {
+   149→        std::cerr << "  [ERROR] Cannot open file: " << path << "\n";
+   150→        return "";
+   151→    }
+   152→    std::ostringstream ss;
+   153→    ss << file.rdbuf();
+   154→    return ss.str();
+   155→}
+   156→
+   157→bool writeFile(const std::string& path, const std::string& content) {
+   158→    std::ofstream file(path);
+   159→    if (!file.is_open()) {
+   160→        std::cerr << "  [ERROR] Cannot write to file: " << path << "\n";
+   161→        return false;
+   162→    }
+   163→    file << content;
+   164→    return true;
+   165→}
+   166→
+   167→std::string getBasename(const std::string& path) {
+   168→    size_t lastSlash = path.find_last_of("/\\");
+   169→    std::string filename = (lastSlash == std::string::npos) ? path : path.substr(lastSlash + 1);
+   170→    size_t lastDot = filename.find_last_of('.');
+   171→    if (lastDot != std::string::npos) {
+   172→        return filename.substr(0, lastDot);
+   173→    }
+   174→    return filename;
+   175→}
+   176→
+   177→std::string getCurrentDir() {
+   178→    char cwd[1024];
+   179→    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+   180→        return std::string(cwd);
+   181→    }
+   182→    return ".";
+   183→}
+   184→
+   185→// ─── Banner & Help ────────────────────────────────────────────────────
+   186→
+   187→void printBanner() {
+   188→    std::cout << "\n";
+   189→    std::cout << "  ╔══════════════════════════════════════╗\n";
+   190→    std::cout << "  ║   Bantu Programming Language v" << BANTU_VERSION << "  ║\n";
+   191→    std::cout << "  ║   Built with C++ & CMake             ║\n";
+   192→    std::cout << "  ╚══════════════════════════════════════╝\n";
+   193→    std::cout << "\n";
+   194→    std::cout << "  Type 'exit' to quit, 'help' for commands\n";
+   195→    std::cout << "\n";
+   196→}
+   197→
+   198→void printHelp() {
+   199→    std::cout << "\n";
+   200→    std::cout << "  Bantu Programming Language v" << BANTU_VERSION << "\n";
+   201→    std::cout << "  ─────────────────────────────────────\n";
+   202→    std::cout << "\n";
+   203→    std::cout << "  GETTING STARTED:\n";
+   204→    std::cout << "    bantu setup              Add bantu to PATH (user install)\n";
+   205→    std::cout << "    bantu setup --system     Add bantu to PATH (needs sudo/admin)\n";
+   206→    std::cout << "    bantu setup --seed       Also seed local registry with starter packages\n";
+   207→    std::cout << "    bantu uninstall          Remove bantu from PATH\n";
+   208→    std::cout << "    bantu doctor             Diagnose install + registry state\n";
+   209→    std::cout << "\n";
+   210→    std::cout << "  COMMANDS:\n";
+   211→    std::cout << "    bantu                    Start REPL\n";
+   212→    std::cout << "    bantu run <file.b>       Run a Bantu file\n";
+   213→    std::cout << "    bantu run                Run main.b in current dir\n";
+   214→    std::cout << "    bantu build <file.b>     Compile to executable\n";
+   215→    std::cout << "    bantu build              Build main.b in current dir\n";
+   216→    std::cout << "    bantu init <name>        Create a new CLI Bantu project\n";
+   217→    std::cout << "    bantu init --web <n>     Create a Sua web app (Spring Initializer-style)\n";
+   218→    std::cout << "    bantu new <name>         Alias of init\n";
+   219→    std::cout << "    bantu relay [port]       Start STUN/TURN relay server\n";
+   220→    std::cout << "\n";
+   221→    std::cout << "  PACKAGE MANAGER (offline, npm-style):\n";
+   222→    std::cout << "    bantu install            Install all deps from bantu.json\n";
+   223→    std::cout << "    bantu add <pkg>          Add a dep + install it\n";
+   224→    std::cout << "    bantu add <pkg>@<ver>    Pin a specific version\n";
+   225→    std::cout << "    bantu remove <pkg>       Remove a dep + uninstall it\n";
+   226→    std::cout << "    bantu update             Update all deps to latest\n";
+   227→    std::cout << "    bantu update <pkg>       Update one dep to latest\n";
+   228→    std::cout << "    bantu list               List installed packages in this project\n";
+   229→    std::cout << "    bantu search [term]      Search local registry (offline)\n";
+   230→    std::cout << "    bantu publish <dir>      Add a folder to local registry\n";
+   231→    std::cout << "    bantu publish <dir> --as <n>   Publish under a different name\n";
+   232→    std::cout << "\n";
+   233→    std::cout << "  v1.2.2 RELEASE COMMANDS:\n";
+   234→    std::cout << "    bantu build-windows [opts] [entry.b]  Generate NSIS installer (.exe)\n";
+   235→    std::cout << "      --name <Name>      Application name (default: BantuApp)\n";
+   236→    std::cout << "      --version <x.y.z>  Application version (default: 1.0.0)\n";
+   237→    std::cout << "    bantu bench              Run built-in micro-benchmark suite\n";
+   238→    std::cout << "\n";
+   239→    std::cout << "  DESKTOP APP INSTALLER (cross-platform, offline-ready):\n";
+   240→    std::cout << "    bantu installer                       Auto-detect host platform\n";
+   241→    std::cout << "    bantu installer [entry.b] --platform linux    Generate .deb + .desktop\n";
+   242→    std::cout << "    bantu installer [entry.b] --platform windows  Generate NSIS .exe installer\n";
+   243→    std::cout << "    bantu installer [entry.b] --platform macos    Generate .app bundle\n";
+   244→    std::cout << "    bantu installer [entry.b] --platform android  Generate Android Studio project + APK\n";
+   245→    std::cout << "      --name <Name>      Application name (default: from bantu.json or folder)\n";
+   246→    std::cout << "      --version <x.y.z>  Application version (default: 1.0.0)\n";
+   247→    std::cout << "      --icon <path>      Path to icon (.png/.ico/.icns) for shortcuts\n";
+   248→    std::cout << "      --bundle-bantu     Embed the bantu interpreter inside the installer\n";
+   249→    std::cout << "                          (default: on, so apps run on machines without Bantu)\n";
+   250→    std::cout << "\n";
+   251→    std::cout << "  GLOBAL FLAGS:\n";
+   252→    std::cout << "    bantu --help             Show this help\n";
+   253→    std::cout << "    bantu --version          Show version\n";
+   254→    std::cout << "    bantu --quiet run app.b  Run quietly (no [INCLUDE]/[Executed in..] logs)\n";
+   255→    std::cout << "    bantu -q run app.b       Alias of --quiet\n";
+   256→    std::cout << "\n";
+   257→    std::cout << "  EXAMPLES:\n";
+   258→    std::cout << "    bantu setup              # one-time: put bantu on PATH\n";
+   259→    std::cout << "    bantu init myproject     # new CLI project\n";
+   260→    std::cout << "    bantu init --web shop    # new Sua web app 'shop'\n";
+   261→    std::cout << "    cd myproject && bantu run\n";
+   262→    std::cout << "    bantu add math-utils     # install math-utils package\n";
+   263→    std::cout << "    bantu install            # reinstall all deps from bantu.json\n";
+   264→    std::cout << "    bantu installer app.b --platform linux   # build .deb installer\n";
+   265→    std::cout << "\n";
+   266→    std::cout << "  KEYWORDS:\n";
+   267→    std::cout << "    def, if, else, while, for, each..in,\n";
+   268→    std::cout << "    return, print, read, db, fetch, await,\n";
+   269→    std::cout << "    try, catch, break, continue, switch,\n";
+   270→    std::cout << "    const, private, public, from,\n";
+   271→    std::cout << "    class, extends, new, create, delete,\n";
+   272→    std::cout << "    update, calc, import, export\n";
+   273→    std::cout << "\n";
+   274→    std::cout << "  REAL-TIME (sua framework):\n";
+   275→    std::cout << "    channel, signal, stun, stream,\n";
+   276→    std::cout << "    broadcast, relay, connect, peer,\n";
+   277→    std::cout << "    ice, candidate, room, offer, answer\n";
+   278→    std::cout << "\n";
+   279→    std::cout << "  TYPES:\n";
+   280→    std::cout << "    number, string, bool, list, dict, any, func\n";
+   281→    std::cout << "\n";
+   282→    std::cout << "  VALUES:\n";
+   283→    std::cout << "    true, false, null\n";
+   284→    std::cout << "\n";
+   285→}
+   286→
+   287→// ─── Run Code ─────────────────────────────────────────────────────────
+   288→
+   289→// v1.2.2: global quiet flag — flips evaluator into quiet mode and suppresses
+   290→// the "Running:" / "[Executed in ...]" chit-chat. Set by --quiet on the CLI.
+   291→static bool g_quietMode = false;
+   292→
+   293→void runCode(const std::string& source, const std::string& filename = "<repl>") {
+   294→    auto start = std::chrono::high_resolution_clock::now();
+   295→
+   296→    Lexer lexer(source);
+   297→    auto tokens = lexer.tokenize();
+   298→
+   299→    Parser parser(std::move(tokens));
+   300→    auto ast = parser.parse();
+   301→
+   302→    Evaluator evaluator;
+   303→    evaluator.setQuiet(g_quietMode);
+   304→    // v1.2.1: tell the evaluator which file it's running so that
+   305→    // `include "./..."` statements resolve relative to it.
+   306→    if (filename != "<repl>") {
+   307→        evaluator.setEntryPoint(filename);
+   308→    }
+   309→    evaluator.evaluate(ast);
+   310→
+   311→    auto end = std::chrono::high_resolution_clock::now();
+   312→    auto us = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+   313→    if (filename != "<repl>" && !g_quietMode) {
+   314→        std::cout << "\n  [Executed in " << us.count() << " us]\n";
+   315→    }
+   316→}
+   317→
+   318→// ─── REPL ─────────────────────────────────────────────────────────────
+   319→
+   320→void runRepl() {
+   321→    printBanner();
+   322→
+   323→    std::string line;
+   324→    std::string buffer;
+   325→
+   326→    while (true) {
+   327→        if (buffer.empty()) {
+   328→            std::cout << "bantu> ";
+   329→        } else {
+   330→            std::cout << "  ...> ";
+   331→        }
+   332→
+   333→        if (!std::getline(std::cin, line)) break;
+   334→
+   335→        size_t start = line.find_first_not_of(" \t\r\n");
+   336→        if (start == std::string::npos) continue;
+   337→        line = line.substr(start);
+   338→
+   339→        if (line == "exit" || line == "quit") {
+   340→            std::cout << "  Goodbye! Kwaheri!\n";
+   341→            break;
+   342→        }
+   343→        if (line == "help") {
+   344→            printHelp();
+   345→            continue;
+   346→        }
+   347→        if (line == "clear") {
+   348→            buffer.clear();
+   349→            continue;
+   350→        }
+   351→
+   352→        buffer += line + "\n";
+   353→
+   354→        int braceCount = 0;
+   355→        for (char c : buffer) {
+   356→            if (c == '{') braceCount++;
+   357→            if (c == '}') braceCount--;
+   358→        }
+   359→
+   360→        if (braceCount <= 0) {
+   361→            try {
+   362→                runCode(buffer, "<repl>");
+   363→            } catch (const std::exception& e) {
+   364→                std::cerr << "  [ERROR] " << e.what() << "\n";
+   365→            }
+   366→            buffer.clear();
+   367→        }
+   368→    }
+   369→}
+   370→
+   371→// ─── bantu run ────────────────────────────────────────────────────────
+   372→
+   373→int cmdRun(const std::string& filePath) {
+   374→    std::string path = filePath;
+   375→
+   376→    // If no file specified, look for main.b
+   377→    if (path.empty()) {
+   378→        if (fileExists("main.b")) {
+   379→            path = "main.b";
+   380→        } else if (fileExists("app.b")) {
+   381→            path = "app.b";
+   382→        } else if (fileExists("index.b")) {
+   383→            path = "index.b";
+   384→        } else {
+   385→            std::cerr << "  [ERROR] No file specified and no main.b, app.b, or index.b found.\n";
+   386→            std::cerr << "  Usage: bantu run <file.b> [--quiet]\n";
+   387→            return 1;
+   388→        }
+   389→    }
+   390→
+   391→    if (!fileExists(path)) {
+   392→        std::cerr << "  [ERROR] File not found: " << path << "\n";
+   393→        return 1;
+   394→    }
+   395→
+   396→    if (!g_quietMode) {
+   397→        std::cout << "  Running: " << path << "\n";
+   398→        std::cout << "  ────────────────────────────\n";
+   399→    }
+   400→
+   401→    std::string source = readFile(path);
+   402→    if (source.empty()) return 1;
+   403→
+   404→    try {
+   405→        runCode(source, path);
+   406→    } catch (const std::exception& e) {
+   407→        std::cerr << "  [FATAL] " << e.what() << "\n";
+   408→        return 1;
+   409→    }
+   410→
+   411→    return 0;
+   412→}
+   413→
+   414→// ─── bantu build ──────────────────────────────────────────────────────
+   415→
+   416→std::string base64Encode(const std::string& input) {
+   417→    static const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+   418→    std::string result;
+   419→    int val = 0, valb = -6;
+   420→    for (unsigned char c : input) {
+   421→        val = (val << 8) + c;
+   422→        valb += 8;
+   423→        while (valb >= 0) {
+   424→            result.push_back(chars[(val >> valb) & 0x3F]);
+   425→            valb -= 6;
+   426→        }
+   427→    }
+   428→    if (valb > -6) result.push_back(chars[((val << 8) >> (valb + 8)) & 0x3F]);
+   429→    while (result.size() % 4) result.push_back('=');
+   430→    return result;
+   431→}
+   432→
+   433→int cmdBuild(const std::string& filePath) {
+   434→    std::string path = filePath;
+   435→
+   436→    // If no file specified, look for main.b
+   437→    if (path.empty()) {
+   438→        if (fileExists("main.b")) {
+   439→            path = "main.b";
+   440→        } else if (fileExists("app.b")) {
+   441→            path = "app.b";
+   442→        } else if (fileExists("index.b")) {
+   443→            path = "index.b";
+   444→        } else {
+   445→            std::cerr << "  [ERROR] No file specified and no main.b, app.b, or index.b found.\n";
+   446→            std::cerr << "  Usage: bantu build <file.b>\n";
+   447→            return 1;
+   448→        }
+   449→    }
+   450→
+   451→    if (!fileExists(path)) {
+   452→        std::cerr << "  [ERROR] File not found: " << path << "\n";
+   453→        return 1;
+   454→    }
+   455→
+   456→    std::string basename = getBasename(path);
+   457→    std::string outputPath = "./" + basename;
+   458→
+   459→    std::cout << "  Building: " << path << " -> " << outputPath << "\n";
+   460→
+   461→    // Read the source file
+   462→    std::string source = readFile(path);
+   463→    if (source.empty()) return 1;
+   464→
+   465→    // Encode source as base64 to avoid shell escaping issues
+   466→    std::string encoded = base64Encode(source);
+   467→
+   468→    // Create a self-contained shell script
+   469→    std::ostringstream script;
+   470→    script << "#!/bin/bash\n";
+   471→    script << "# Bantu Compiled Executable - " << basename << "\n";
+   472→    script << "# Generated by bantu build v" << BANTU_VERSION << "\n";
+   473→    script << "# Source: " << path << "\n";
+   474→    script << "\n";
+   475→
+   476→    // Find the bantu interpreter
+   477→    script << "BANTU_BIN=\"\"\n";
+   478→    script << "if command -v bantu &> /dev/null; then\n";
+   479→    script << "    BANTU_BIN=\"bantu\"\n";
+   480→    script << "elif [ -f \"$HOME/.local/bin/bantu\" ]; then\n";
+   481→    script << "    BANTU_BIN=\"$HOME/.local/bin/bantu\"\n";
+   482→    script << "elif [ -f \"/usr/local/bin/bantu\" ]; then\n";
+   483→    script << "    BANTU_BIN=\"/usr/local/bin/bantu\"\n";
+   484→    script << "else\n";
+   485→    script << "    echo \"[ERROR] Bantu interpreter not found. Install it first.\"\n";
+   486→    script << "    echo \"  https://github.com/AsseySilivestir/swahiliscript\"\n";
+   487→    script << "    exit 1\n";
+   488→    script << "fi\n";
+   489→    script << "\n";
+   490→
+   491→    // Embed base64-encoded source and decode at runtime
+   492→    // Use temp file to avoid REPL mode (bantu with no args starts REPL)
+   493→    script << "BANTU_TMPFILE=$(mktemp /tmp/bantu_XXXXXX.b)\n";
+   494→    script << "echo '" << encoded << "' | base64 -d > \"$BANTU_TMPFILE\"\n";
+   495→    script << "\"$BANTU_BIN\" run \"$BANTU_TMPFILE\"\n";
+   496→    script << "rm -f \"$BANTU_TMPFILE\"\n";
+   497→
+   498→    if (writeFile(outputPath, script.str())) {
+   499→        chmod(outputPath.c_str(), 0755);
+   500→
+   501→        std::cout << "  ────────────────────────────\n";
+   502→        std::cout << "  Build successful: " << outputPath << "\n";
+   503→        std::cout << "  Run with: ." << outputPath.substr(1) << "\n";
+   504→        return 0;
+   505→    }
+   506→
+   507→    return 1;
+   508→}
+   509→
+   510→// ─── bantu init / bantu new ──────────────────────────────────────────
+   511→
+   512→int cmdInit(const std::string& projectName) {
+   513→    if (projectName.empty()) {
+   514→        std::cerr << "  [ERROR] Project name required.\n";
+   515→        std::cerr << "  Usage: bantu init <project-name>\n";
+   516→        return 1;
+   517→    }
+   518→
+   519→    // Check if directory already exists
+   520→    if (fileExists(projectName)) {
+   521→        std::cerr << "  [ERROR] Directory already exists: " << projectName << "\n";
+   522→        return 1;
+   523→    }
+   524→
+   525→    std::cout << "  Creating project: " << projectName << "\n";
+   526→
+   527→    // Create project directory.
+   528→    // Windows `mkdir` takes 1 arg, POSIX `mkdir` takes 2 (path, mode).
+   529→#ifdef _WIN32
+   530→    #define BANTU_MKDIR(p) mkdir(p)
+   531→#else
+   532→    #define BANTU_MKDIR(p) mkdir(p, 0755)
+   533→#endif
+   534→    BANTU_MKDIR(projectName.c_str());
+   535→    BANTU_MKDIR((projectName + "/src").c_str());
+   536→
+   537→    // Create main.b
+   538→    std::string mainContent =
+   539→        "// " + projectName + " - Bantu Project\n"
+   540→        "// Created with bantu init v" + BANTU_VERSION + "\n\n"
+   541→        "print \"Hello from " + projectName + "!\";\n"
+   542→        "print \"Welcome to Bantu Programming Language!\";\n\n"
+   543→        "// Define your functions here\n"
+   544→        "def greet($name) {\n"
+   545→        "    print \"Hello, \" + $name + \"!\";\n"
+   546→        "    return true;\n"
+   547→        "}\n\n"
+   548→        "greet(\"World\");\n";
+   549→
+   550→    writeFile(projectName + "/main.b", mainContent);
+   551→
+   552→    // Create a README
+   553→    std::string readmeContent =
+   554→        "# " + projectName + "\n\n"
+   555→        "A Bantu programming language project.\n\n"
+   556→        "## Getting Started\n\n"
+   557→        "```bash\n"
+   558→        "bantu run main.b\n"
+   559→        "```\n\n"
+   560→        "## Build\n\n"
+   561→        "```bash\n"
+   562→        "bantu build main.b\n"
+   563→        "```\n\n"
+   564→        "## Project Structure\n\n"
+   565→        "```\n" +
+   566→        projectName + "/\n"
+   567→        "  main.b      # Entry point\n"
+   568→        "  src/        # Source modules\n"
+   569→        "```\n\n"
+   570→        "## Learn More\n\n"
+   571→        "- [Bantu Language](https://github.com/AsseySilivestir/swahiliscript)\n"
+   572→        "- Keywords: def, if, else, while, for, each..in, print, read, db, fetch, await, try, catch\n"
+   573→        "- Types: number, string, bool, list, dict, any, func\n"
+   574→        "- Web Framework: sua.get, sua.post, sua.start\n";
+   575→
+   576→    writeFile(projectName + "/README.md", readmeContent);
+   577→
+   578→    // Create bantu.json project config
+   579→    std::string configContent =
+   580→        "{\n"
+   581→        "  \"name\": \"" + projectName + "\",\n"
+   582→        "  \"version\": \"1.0.0\",\n"
+   583→        "  \"entry\": \"main.b\",\n"
+   584→        "  \"template\": \"cli\",\n"
+   585→        "  \"language\": \"bantu\",\n"
+   586→        "  \"bantuVersion\": \"" + BANTU_VERSION + "\",\n"
+   587→        "  \"dependencies\": {}\n"
+   588→        "}\n";
+   589→
+   590→    writeFile(projectName + "/bantu.json", configContent);
+   591→
+   592→    // Create an example module in src/
+   593→    std::string moduleContent =
+   594→        "// utils.b - Utility functions for " + projectName + "\n\n"
+   595→        "def add($a, $b) {\n"
+   596→        "    return $a + $b;\n"
+   597→        "}\n\n"
+   598→        "def subtract($a, $b) {\n"
+   599→        "    return $a - $b;\n"
+   600→        "}\n";
+   601→
+   602→    writeFile(projectName + "/src/utils.b", moduleContent);
+   603→
+   604→    std::cout << "  ────────────────────────────\n";
+   605→    std::cout << "  Project created: " << projectName << "/\n";
+   606→    std::cout << "    " << projectName << "/main.b        (entry point)\n";
+   607→    std::cout << "    " << projectName << "/src/utils.b    (example module)\n";
+   608→    std::cout << "    " << projectName << "/bantu.json     (project config)\n";
+   609→    std::cout << "    " << projectName << "/README.md      (documentation)\n";
+   610→    std::cout << "\n";
+   611→    std::cout << "  Next steps:\n";
+   612→    std::cout << "    cd " << projectName << "\n";
+   613→    std::cout << "    bantu run main.b\n";
+   614→    std::cout << "    bantu add math-utils      # add a package\n";
+   615→    std::cout << "    bantu search              # browse local registry\n";
+   616→
+   617→    return 0;
+   618→}
+   619→
+   620→// ─── bantu init --web / bantu new --web ──────────────────────────────
+   621→// Scaffolds a Sua web app: server.b + frontend + launchers + Dockerfile
+   622→// + render.yaml + README. Like Spring Initializer for web apps.
+   623→
+   624→int cmdInitWeb(const std::string& projectName) {
+   625→    if (projectName.empty()) {
+   626→        std::cerr << "  [ERROR] Project name required.\n";
+   627→        std::cerr << "  Usage: bantu init --web <project-name>\n";
+   628→        return 1;
+   629→    }
+   630→
+   631→    // Reject names that would make bad directory names or bad SQL identifiers.
+   632→    if (projectName.find_first_of("/\\:*?\"<>|") != std::string::npos
+   633→        || projectName.find(' ') != std::string::npos) {
+   634→        std::cerr << "  [ERROR] Invalid project name: '" << projectName << "'\n";
+   635→        std::cerr << "  Names cannot contain spaces or any of: / \\ : * ? \" < > |\n";
+   636→        return 1;
+   637→    }
+   638→
+   639→    if (fileExists(projectName)) {
+   640→        std::cerr << "  [ERROR] Directory already exists: " << projectName << "\n";
+   641→        return 1;
+   642→    }
+   643→
+   644→    std::cout << "  Creating Sua web app: " << projectName << "\n";
+   645→
+   646→#ifdef _WIN32
+   647→    #define BANTU_MKDIR_WEB(p) mkdir(p)
+   648→#else
+   649→    #define BANTU_MKDIR_WEB(p) mkdir(p, 0755)
+   650→#endif
+   651→    BANTU_MKDIR_WEB(projectName.c_str());
+   652→    BANTU_MKDIR_WEB((projectName + "/public").c_str());
+   653→    BANTU_MKDIR_WEB((projectName + "/public/css").c_str());
+   654→    BANTU_MKDIR_WEB((projectName + "/public/js").c_str());
+   655→#undef BANTU_MKDIR_WEB
+   656→
+   657→    // ─── Write all files ────────────────────────────────────────────
+   658→    writeFile(projectName + "/main.b",              bantu_templates::main_b(projectName));
+   659→    writeFile(projectName + "/public/index.html",   bantu_templates::index_html(projectName));
+   660→    writeFile(projectName + "/public/css/style.css",bantu_templates::style_css());
+   661→    writeFile(projectName + "/public/js/app.js",    bantu_templates::app_js());
+   662→    writeFile(projectName + "/start.sh",            bantu_templates::start_sh());
+   663→    writeFile(projectName + "/start.bat",           bantu_templates::start_bat());
+   664→    writeFile(projectName + "/Dockerfile",          bantu_templates::dockerfile());
+   665→    writeFile(projectName + "/render.yaml",         bantu_templates::render_yaml(projectName));
+   666→    writeFile(projectName + "/.gitignore",          bantu_templates::gitignore());
+   667→    writeFile(projectName + "/README.md",           bantu_templates::readme_md(projectName));
+   668→    writeFile(projectName + "/bantu.json",          bantu_templates::bantu_json(projectName, BANTU_VERSION));
+   669→
+   670→    // Make start.sh executable on POSIX
+   671→#ifndef _WIN32
+   672→    chmod((projectName + "/start.sh").c_str(), 0755);
+   673→#endif
+   674→
+   675→    std::cout << "  ────────────────────────────\n";
+   676→    std::cout << "  Project created: " << projectName << "/\n";
+   677→    std::cout << "    " << projectName << "/main.b                ← backend (Sua + SQLite)\n";
+   678→    std::cout << "    " << projectName << "/public/                ← frontend (HTML/CSS/JS)\n";
+   679→    std::cout << "    " << projectName << "/start.sh / start.bat   ← launchers\n";
+   680→    std::cout << "    " << projectName << "/Dockerfile             ← Render-ready\n";
+   681→    std::cout << "    " << projectName << "/render.yaml            ← Render blueprint\n";
+   682→    std::cout << "    " << projectName << "/README.md              ← docs\n";
+   683→    std::cout << "\n";
+   684→    std::cout << "  Next steps:\n";
+   685→    std::cout << "    cd " << projectName << "\n";
+   686→    std::cout << "    ./start.sh          # Linux/Mac\n";
+   687→    std::cout << "    start.bat           # Windows\n";
+   688→    std::cout << "    bantu run main.b    # anywhere with bantu on PATH\n";
+   689→    std::cout << "\n";
+   690→    std::cout << "  Then open http://localhost:8080\n";
+   691→
+   692→    return 0;
+   693→}
+   694→
+   695→// ─── bantu relay ────────────────────────────────────────────────────
+   696→
+   697→int cmdRelay(int port) {
+   698→    if (port <= 0) port = 3478;
+   699→
+   700→    std::cout << "\n";
+   701→    std::cout << "  ╔═══════════════════════════════════════════════╗\n";
+   702→    std::cout << "  ║   Bantu WebRTC Relay Server v" << BANTU_VERSION << "           ║\n";
+   703→    std::cout << "  ║   STUN/TURN NAT Traversal + Signaling        ║\n";
+   704→    std::cout << "  ╚═══════════════════════════════════════════════╝\n";
+   705→    std::cout << "\n";
+   706→    std::cout << "  [RELAY] STUN server:    UDP port " << port << "\n";
+   707→    std::cout << "  [RELAY] TURN relay:     UDP port " << (port + 1) << "\n";
+   708→    std::cout << "  [RELAY] Relay ports:    50000-60000\n";
+   709→    std::cout << "  [RELAY] Signaling:      SDP offer/answer\n";
+   710→    std::cout << "  [RELAY] ICE:            Candidate gathering\n";
+   711→    std::cout << "  [RELAY] WebSocket:      Upgrade support\n";
+   712→    std::cout << "\n";
+   713→    std::cout << "  Built-in NAT traversal means your Bantu apps\n";
+   714→    std::cout << "  can connect directly peer-to-peer, even behind\n";
+   715→    std::cout << "  firewalls and symmetric NATs!\n";
+   716→    std::cout << "\n";
+   717→    std::cout << "  Press Ctrl+C to stop the relay server.\n";
+   718→    std::cout << "\n";
+   719→
+   720→    // Start the STUN server
+   721→    StunServer stunServer(port);
+   722→    if (!stunServer.start()) {
+   723→        std::cerr << "  [ERROR] Failed to start STUN server on port " << port << "\n";
+   724→        return 1;
+   725→    }
+   726→
+   727→    // Start the TURN relay server
+   728→    TurnServer turnServer(port + 1);
+   729→    if (!turnServer.start()) {
+   730→        std::cerr << "  [ERROR] Failed to start TURN server on port " << (port + 1) << "\n";
+   731→        return 1;
+   732→    }
+   733→
+   734→    // Keep the main thread alive
+   735→    while (true) {
+   736→        std::this_thread::sleep_for(std::chrono::seconds(1));
+   737→    }
+   738→
+   739→    return 0;
+   740→}
+   741→
+   742→// ─── bantu setup / bantu uninstall / bantu doctor ───────────────────
+   743→// PATH integration. These just delegate to package_manager.hpp.
+   744→
+   745→int cmdSetup(int argc, char* argv[]) {
+   746→    bool systemWide = false;
+   747→    bool seed = false;
+   748→    for (int i = 2; i < argc; ++i) {
+   749→        std::string a = argv[i];
+   750→        if (a == "--system" || a == "-s") systemWide = true;
+   751→        else if (a == "--seed")           seed = true;
+   752→        else if (a == "--user" || a == "-u") systemWide = false;
+   753→        else if (a == "--help" || a == "-h") {
+   754→            std::cout << "  Usage:\n";
+   755→            std::cout << "    bantu setup              Add bantu to PATH (user install)\n";
+   756→            std::cout << "    bantu setup --system     Add bantu to PATH (system-wide; needs sudo)\n";
+   757→            std::cout << "    bantu setup --seed       Also seed local registry with starter packages\n";
+   758→            std::cout << "    bantu uninstall          Remove bantu from PATH\n";
+   759→            return 0;
+   760→        }
+   761→    }
+   762→
+   763→    std::cout << "\n";
+   764→    std::cout << "  ╔══════════════════════════════════════════╗\n";
+   765→    std::cout << "  ║   Bantu PATH Integration v" << BANTU_VERSION << "           ║\n";
+   766→    std::cout << "  ╚══════════════════════════════════════════╝\n\n";
+   767→
+   768→    if (!bantu_pkg::installToPath(systemWide)) {
+   769→        std::cerr << "\n  [FAIL] PATH integration failed.\n";
+   770→        return 1;
+   771→    }
+   772→
+   773→    if (seed) {
+   774→        std::cout << "\n  ── Seeding local registry with starter packages ──\n";
+   775→        int n = bantu_pkg::seedStarterRegistry();
+   776→        std::cout << "  [OK] Seeded " << n << " starter packages into "
+   777→                  << bantu_pkg::getRegistryDir() << "\n";
+   778→        std::cout << "       Run 'bantu search' to see them.\n";
+   779→    }
+   780→
+   781→    std::cout << "\n  ────────────────────────────\n";
+   782→    std::cout << "  Done. Verify with:\n";
+   783→    std::cout << "    bantu --version\n";
+   784→    std::cout << "    bantu doctor\n";
+   785→    std::cout << "\n";
+   786→    return 0;
+   787→}
+   788→
+   789→int cmdUninstall() {
+   790→    std::cout << "\n  Removing bantu from PATH...\n\n";
+   791→    if (!bantu_pkg::removeFromPath()) {
+   792→        std::cerr << "  [WARN] Could not fully clean PATH entries.\n";
+   793→    }
+   794→    std::cout << "\n  [OK] Done. The bantu binary itself was NOT deleted from disk.\n";
+   795→    std::cout << "       Manually remove " << bantu_pkg::getUserInstallBinDir()
+   796→              << " if you want a full uninstall.\n";
+   797→    return 0;
+   798→}
+   799→
+   800→int cmdDoctor() {
+   801→    return bantu_pkg::runDoctor();
+   802→}
+   803→
+   804→// ─── bantu install / add / remove / update / list / search / publish ─
+   805→// Offline package manager. All delegate to package_manager.hpp.
+   806→
+   807→int cmdInstall() {
+   808→    std::cout << "\n  Installing all dependencies from bantu.json...\n\n";
+   809→    int n = bantu_pkg::installAllFromManifest();
+   810→    return (n < 0) ? 1 : 0;
+   811→}
+   812→
+   813→int cmdAdd(int argc, char* argv[]) {
+   814→    if (argc < 3) {
+   815→        std::cerr << "  [ERROR] Package name required.\n";
+   816→        std::cerr << "  Usage: bantu add <pkg-name>\n";
+   817→        std::cerr << "         bantu add <pkg-name>@<version>\n";
+   818→        return 1;
+   819→    }
+   820→    std::cout << "\n";
+   821→    bool any = false;
+   822→    for (int i = 2; i < argc; ++i) {
+   823→        std::string a = argv[i];
+   824→        if (a == "--help" || a == "-h") {
+   825→            std::cout << "  Usage: bantu add <pkg-name>[@<version>]\n";
+   826→            return 0;
+   827→        }
+   828→        if (!a.empty() && a[0] == '-') continue;
+   829→        std::cout << "  ── Adding " << a << " ──\n";
+   830→        if (bantu_pkg::addDependency(a)) any = true;
+   831→    }
+   832→    if (!any) {
+   833→        std::cerr << "  [ERROR] No package name provided.\n";
+   834→        return 1;
+   835→    }
+   836→    return 0;
+   837→}
+   838→
+   839→int cmdRemove(int argc, char* argv[]) {
+   840→    if (argc < 3) {
+   841→        std::cerr << "  [ERROR] Package name required.\n";
+   842→        std::cerr << "  Usage: bantu remove <pkg-name>\n";
+   843→        return 1;
+   844→    }
+   845→    std::cout << "\n";
+   846→    for (int i = 2; i < argc; ++i) {
+   847→        std::string a = argv[i];
+   848→        if (!a.empty() && a[0] == '-') continue;
+   849→        bantu_pkg::removeDependency(a);
+   850→    }
+   851→    return 0;
+   852→}
+   853→
+   854→int cmdUpdate(int argc, char* argv[]) {
+   855→    std::cout << "\n";
+   856→    if (argc < 3) {
+   857→        std::cout << "  Updating all dependencies to latest...\n\n";
+   858→        int n = bantu_pkg::updateAll();
+   859→        return (n < 0) ? 1 : 0;
+   860→    }
+   861→    int rc = 0;
+   862→    for (int i = 2; i < argc; ++i) {
+   863→        std::string a = argv[i];
+   864→        if (!a.empty() && a[0] == '-') continue;
+   865→        std::cout << "  ── Updating " << a << " ──\n";
+   866→        if (!bantu_pkg::updatePackage(a)) rc = 1;
+   867→    }
+   868→    return rc;
+   869→}
+   870→
+   871→int cmdList() {
+   872→    bantu_pkg::listInstalled();
+   873→    return 0;
+   874→}
+   875→
+   876→int cmdSearch(int argc, char* argv[]) {
+   877→    std::string term = (argc >= 3) ? std::string(argv[2]) : "";
+   878→    bantu_pkg::searchRegistry(term);
+   879→    return 0;
+   880→}
+   881→
+   882→int cmdPublish(int argc, char* argv[]) {
+   883→    std::string dir;
+   884→    std::string asName;
+   885→    for (int i = 2; i < argc; ++i) {
+   886→        std::string a = argv[i];
+   887→        if (a == "--as" && i + 1 < argc) {
+   888→            asName = argv[++i];
+   889→        } else if (a == "--help" || a == "-h") {
+   890→            std::cout << "  Usage: bantu publish <folder> [--as <name>]\n";
+   891→            std::cout << "  The folder must contain package.json + .b source files.\n";
+   892→            return 0;
+   893→        } else if (!a.empty() && a[0] != '-') {
+   894→            dir = a;
+   895→        }
+   896→    }
+   897→    if (dir.empty()) {
+   898→        std::cerr << "  [ERROR] Folder required.\n";
+   899→        std::cerr << "  Usage: bantu publish <folder> [--as <name>]\n";
+   900→        return 1;
+   901→    }
+   902→    std::cout << "\n  Publishing " << dir << "...\n\n";
+   903→    return bantu_pkg::publishPackage(dir, asName) ? 0 : 1;
+   904→}
+   905→
+   906→// ─── bantu build-windows ──────────────────────────────────────────────
+   907→// v1.2.1: Generate a Windows installer (.exe via NSIS) for the current
+   908→// Bantu project. Requires makensis (NSIS) on PATH. The installer bundles:
+   909→//   - bantu.exe (the interpreter)
+   910→//   - the project's .b files
+   911→//   - bantu.json manifest
+   912→//   - a launcher .bat that runs `bantu run main.b`
+   913→// On success, prints the path to the generated installer.
+   914→//
+   915→// Usage:
+   916→//   bantu build-windows                 # uses main.b / app.b / index.b
+   917→//   bantu build-windows <file.b>        # uses <file.b> as entry point
+   918→//   bantu build-windows --name "MyApp"  # set installer app name
+   919→//   bantu build-windows --version 1.0.0 # set installer version
+   920→//
+   921→// The generated installer is at ./dist/<Name>-Setup-<Version>.exe
+   922→int cmdBuildWindows(int argc, char* argv[]) {
+   923→    std::string entryFile;
+   924→    std::string appName = "BantuApp";
+   925→    std::string appVersion = "1.0.0";
+   926→
+   927→    for (int i = 2; i < argc; ++i) {
+   928→        std::string a = argv[i];
+   929→        if (a == "--name" && i + 1 < argc) {
+   930→            appName = argv[++i];
+   931→        } else if (a == "--version" && i + 1 < argc) {
+   932→            appVersion = argv[++i];
+   933→        } else if (a == "--help" || a == "-h") {
+   934→            std::cout << "  Usage: bantu build-windows [options] [entry-file.b]\n";
+   935→            std::cout << "  Options:\n";
+   936→            std::cout << "    --name <Name>      Application name (default: BantuApp)\n";
+   937→            std::cout << "    --version <x.y.z>  Application version (default: 1.0.0)\n";
+   938→            std::cout << "\n  Requires NSIS (makensis) on PATH.\n";
+   939→            std::cout << "  Output: ./dist/" << appName << "-Setup-" << appVersion << ".exe\n";
+   940→            return 0;
+   941→        } else if (!a.empty() && a[0] != '-') {
+   942→            entryFile = a;
+   943→        }
+   944→    }
+   945→
+   946→    // Resolve entry file
+   947→    if (entryFile.empty()) {
+   948→        if (fileExists("main.b")) entryFile = "main.b";
+   949→        else if (fileExists("app.b")) entryFile = "app.b";
+   950→        else if (fileExists("index.b")) entryFile = "index.b";
+   951→        else {
+   952→            std::cerr << "  [ERROR] No entry file found (looked for main.b, app.b, index.b)\n";
+   953→            return 1;
+   954→        }
+   955→    }
+   956→    if (!fileExists(entryFile)) {
+   957→        std::cerr << "  [ERROR] Entry file not found: " << entryFile << "\n";
+   958→        return 1;
+   959→    }
+   960→
+   961→    // Create dist/ directory
+   962→    if (system("mkdir -p dist") != 0) {
+   963→        std::cerr << "  [ERROR] Failed to create dist/ directory\n";
+   964→        return 1;
+   965→    }
+   966→
+   967→    // Write NSIS installer script
+   968→    std::string nsiPath = "dist/installer.nsi";
+   969→    std::ofstream nsi(nsiPath);
+   970→    if (!nsi.is_open()) {
+   971→        std::cerr << "  [ERROR] Cannot write " << nsiPath << "\n";
+   972→        return 1;
+   973→    }
+   974→
+   975→    nsi << "; Generated by bantu build-windows v" << BANTU_VERSION << "\n";
+   976→    nsi << "!define APPNAME \"" << appName << "\"\n";
+   977→    nsi << "!define APPVERSION \"" << appVersion << "\"\n";
+   978→    nsi << "!define APPPUBLISHER \"Bantu\"\n";
+   979→    nsi << "\n";
+   980→    nsi << "Name \"${APPNAME} ${APPVERSION}\"\n";
+   981→    nsi << "OutFile \"${APPNAME}-Setup-${APPVERSION}.exe\"\n";
+   982→    nsi << "InstallDir \"$LOCALAPPDATA\\${APPNAME}\"\n";
+   983→    nsi << "RequestExecutionLevel user\n";
+   984→    nsi << "\n";
+   985→    nsi << "Page directory\n";
+   986→    nsi << "Page instfiles\n";
+   987→    nsi << "\n";
+   988→    nsi << "Section \"${APPNAME}\"\n";
+   989→    nsi << "  SetOutPath \"$INSTDIR\"\n";
+   990→    nsi << "  ; Bundle the Bantu interpreter (must be on PATH or co-located)\n";
+   991→    nsi << "  File /nonfatal \"bantu.exe\"\n";
+   992→    nsi << "  File /nonfatal \"bantu\"\n";
+   993→    nsi << "  ; Bundle the project source\n";
+   994→    nsi << "  File \"*.b\"\n";
+   995→    nsi << "  File /nonfatal \"bantu.json\"\n";
+   996→    nsi << "  File /nonfatal \"*.bat\"\n";
+   997→    nsi << "\n";
+   998→    nsi << "  ; Create launcher batch file\n";
+   999→    nsi << "  FileOpen $0 \"$INSTDIR\\run-${APPNAME}.bat\" w\n";
+  1000→    nsi << "  FileWrite $0 '@echo off$\r$\n'\n";
+  1001→    nsi << "  FileWrite $0 'cd /d \"%~dp0\"$\r$\n'\n";
+  1002→    nsi << "  FileWrite $0 'bantu.exe run " << entryFile << "$\r$\n'\n";
+  1003→    nsi << "  FileWrite $0 'pause$\r$\n'\n";
+  1004→    nsi << "  FileClose $0\n";
+  1005→    nsi << "\n";
+  1006→    nsi << "  ; Create Start Menu shortcut\n";
+  1007→    nsi << "  CreateDirectory \"$SMPROGRAMS\\${APPNAME}\"\n";
+  1008→    nsi << "  CreateShortcut \"$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk\" \\\n";
+  1009→    nsi << "    \"$INSTDIR\\run-${APPNAME}.bat\" \"\" \"$INSTDIR\\bantu.exe\"\n";
+  1010→    nsi << "\n";
+  1011→    nsi << "  ; Uninstaller\n";
+  1012→    nsi << "  WriteUninstaller \"$INSTDIR\\uninstall-${APPNAME}.exe\"\n";
+  1013→    nsi << "  CreateShortcut \"$SMPROGRAMS\\${APPNAME}\\Uninstall.lnk\" \\\n";
+  1014→    nsi << "    \"$INSTDIR\\uninstall-${APPNAME}.exe\"\n";
+  1015→    nsi << "SectionEnd\n";
+  1016→    nsi << "\n";
+  1017→    nsi << "Section \"Uninstall\"\n";
+  1018→    nsi << "  Delete \"$INSTDIR\\*.*\"\n";
+  1019→    nsi << "  RMDir \"$INSTDIR\"\n";
+  1020→    nsi << "  Delete \"$SMPROGRAMS\\${APPNAME}\\*.*\"\n";
+  1021→    nsi << "  RMDir \"$SMPROGRAMS\\${APPNAME}\"\n";
+  1022→    nsi << "SectionEnd\n";
+  1023→    nsi.close();
+  1024→
+  1025→    std::cout << "  [BUILD-WINDOWS] NSIS script written: " << nsiPath << "\n";
+  1026→    std::cout << "  [BUILD-WINDOWS] App: " << appName << " v" << appVersion << "\n";
+  1027→    std::cout << "  [BUILD-WINDOWS] Entry: " << entryFile << "\n";
+  1028→
+  1029→    // Try to invoke makensis
+  1030→    int rc = system("makensis dist/installer.nsi");
+  1031→    if (rc != 0) {
+  1032→        std::cerr << "\n  [WARN] makensis not found or failed (rc=" << rc << ")\n";
+  1033→        std::cerr << "  Install NSIS to generate the .exe:\n";
+  1034→        std::cerr << "    Linux:  sudo apt install nsis\n";
+  1035→        std::cerr << "    macOS:  brew install nsis\n";
+  1036→        std::cerr << "    Windows: https://nsis.sourceforge.io/Download\n";
+  1037→        std::cerr << "\n  Then run:\n";
+  1038→        std::cerr << "    makensis dist/installer.nsi\n";
+  1039→        std::cerr << "\n  The script is ready at " << nsiPath << "\n";
+  1040→        return 1;
+  1041→    }
+  1042→
+  1043→    std::cout << "\n  [BUILD-WINDOWS] Installer generated:\n";
+  1044→    std::cout << "    dist/" << appName << "-Setup-" << appVersion << ".exe\n";
+  1045→    return 0;
+  1046→}
+  1047→
+  1048→// ─── bantu installer ─────────────────────────────────────────────────
+  1049→// Cross-platform desktop installer generator.
+  1050→//
+  1051→//   bantu installer                        # auto-detect host platform
+  1052→//   bantu installer app.b --platform linux
+  1053→//   bantu installer app.b --platform windows
+  1054→//   bantu installer app.b --platform macos
+  1055→//
+  1056→// Output goes to ./dist/. Each platform produces a runnable, offline-
+  1057→// ready installer that bundles the bantu interpreter (so end users
+  1058→// don't need Bantu installed) plus the project's .b source files and
+  1059→// a launcher.
+  1060→//
+  1061→// Linux:   dist/<name>_<version>_amd64.deb  (dpkg-deb)
+  1062→//          Also writes a .desktop file so the app appears in the
+  1063→//          launcher menu.
+  1064→//
+  1065→// Windows: dist/<name>-Setup-<version>.exe  (NSIS .nsi)
+  1066→//          If makensis is on PATH the .exe is built; otherwise the
+  1067→//          .nsi is left for the user to compile.
+  1068→//
+  1069→// macOS:   dist/<Name>.app bundle
+  1070→//          Contents/{MacOS,Resources} layout with Info.plist and a
+  1071→//          launcher script. The .app can be opened with `open` or
+  1072→//          double-clicked in Finder.
+  1073→
+  1074→// Trim leading/trailing whitespace
+  1075→static std::string trimStr(const std::string& s) {
+  1076→    size_t a = s.find_first_not_of(" \t\r\n");
+  1077→    if (a == std::string::npos) return "";
+  1078→    size_t b = s.find_last_not_of(" \t\r\n");
+  1079→    return s.substr(a, b - a + 1);
+  1080→}
+  1081→
+  1082→// Find a JSON string field by key. Very small JSON parser — enough
+  1083→// for bantu.json which the scaffolder writes itself.
+  1084→static std::string jsonField(const std::string& json, const std::string& key) {
+  1085→    std::string needle = "\"" + key + "\"";
+  1086→    size_t k = json.find(needle);
+  1087→    if (k == std::string::npos) return "";
+  1088→    size_t colon = json.find(':', k + needle.size());
+  1089→    if (colon == std::string::npos) return "";
+  1090→    size_t q1 = json.find('"', colon + 1);
+  1091→    if (q1 == std::string::npos) return "";
+  1092→    size_t q2 = json.find('"', q1 + 1);
+  1093→    if (q2 == std::string::npos) return "";
+  1094→    return json.substr(q1 + 1, q2 - q1 - 1);
+  1095→}
+  1096→
+  1097→// Locate the bantu interpreter to embed in the installer.
+  1098→// Search order: $BANTU_BIN env, alongside current argv[0], PATH.
+  1099→static std::string findSelfBinary() {
+  1100→    const char* envBin = std::getenv("BANTU_BIN");
+  1101→    if (envBin && *envBin && fileExists(envBin)) {
+  1102→        return std::string(envBin);
+  1103→    }
+  1104→#ifdef _WIN32
+  1105→    // Windows: GetModuleFileNameA returns the absolute path of the running .exe
+  1106→    char buf[4096];
+  1107→    DWORD n = GetModuleFileNameA(nullptr, buf, sizeof(buf) - 1);
+  1108→    if (n > 0 && n < sizeof(buf)) {
+  1109→        buf[n] = 0;
+  1110→        return std::string(buf);
+  1111→    }
+  1112→    return "";
+  1113→#elif defined(__APPLE__)
+  1114→    // macOS: use _NSGetExecutablePath (from <mach-o/dyld.h>)
+  1115→    // Returns the absolute path of the current process's executable,
+  1116→    // even if invoked via a symlink or relative path.
+  1117→    char buf[4096];
+  1118→    uint32_t size = sizeof(buf);
+  1119→    if (_NSGetExecutablePath(buf, &size) == 0) {
+  1120→        // Resolve any symlinks in the path (e.g. /usr/local/bin/bantu → real location)
+  1121→        char resolved[4096];
+  1122→        if (realpath(buf, resolved) != nullptr) {
+  1123→            return std::string(resolved);
+  1124→        }
+  1125→        return std::string(buf);
+  1126→    }
+  1127→    // Buffer too small — try with a heap allocation
+  1128→    if (size > 0 && size < 1'000'000) {
+  1129→        char* heapBuf = new char[size + 1];
+  1130→        if (_NSGetExecutablePath(heapBuf, &size) == 0) {
+  1131→            std::string result(heapBuf);
+  1132→            delete[] heapBuf;
+  1133→            char resolved[4096];
+  1134→            if (realpath(result.c_str(), resolved) != nullptr) {
+  1135→                return std::string(resolved);
+  1136→            }
+  1137→            return result;
+  1138→        }
+  1139→        delete[] heapBuf;
+  1140→    }
+  1141→    // Fall back to PATH lookup
+  1142→    int rc = system("command -v bantu > /tmp/.bantu_bin_path 2>/dev/null");
+  1143→    (void)rc;
+  1144→    std::ifstream f("/tmp/.bantu_bin_path");
+  1145→    if (f.is_open()) {
+  1146→        std::string line;
+  1147→        std::getline(f, line);
+  1148→        if (!line.empty() && fileExists(line)) return line;
+  1149→    }
+  1150→    return "";
+  1151→#else
+  1152→    // Linux: /proc/self/exe is a symlink to the actual executable
+  1153→    if (fileExists("/proc/self/exe")) {
+  1154→        char buf[4096];
+  1155→        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  1156→        if (n > 0) { buf[n] = 0; return std::string(buf); }
+  1157→    }
+  1158→    // Fall back to PATH lookup
+  1159→    int rc = system("command -v bantu > /tmp/.bantu_bin_path 2>/dev/null");
+  1160→    (void)rc;
+  1161→    std::ifstream f("/tmp/.bantu_bin_path");
+  1162→    if (f.is_open()) {
+  1163→        std::string line;
+  1164→        std::getline(f, line);
+  1165→        if (!line.empty() && fileExists(line)) return line;
+  1166→    }
+  1167→    return "";
+  1168→#endif
+  1169→}
+  1170→
+  1171→// ── Linux: build a .deb package ──
+  1172→static int buildLinuxInstaller(
+  1173→    const std::string& entryFile,
+  1174→    const std::string& appName,
+  1175→    const std::string& appVersion,
+  1176→    const std::string& iconPath,
+  1177→    bool bundleBantu)
+  1178→{
+  1179→    std::string distDir = "dist";
+  1180→    if (system(("mkdir -p " + distDir).c_str()) != 0) {
+  1181→        std::cerr << "  [ERROR] Cannot create dist/\n";
+  1182→        return 1;
+  1183→    }
+  1184→
+  1185→    // Sanitize appName for package name (lowercase, no spaces).
+  1186→    std::string pkgName = appName;
+  1187→    for (auto& c : pkgName) {
+  1188→        if (std::isalnum((unsigned char)c)) c = (char)std::tolower((unsigned char)c);
+  1189→        else c = '_';
+  1190→    }
+  1191→    std::string pkgVer = appVersion;
+  1192→    std::string stagingDir = "dist/" + pkgName + "_" + pkgVer + "_amd64_staging";
+  1193→    std::string cleanCmd = "rm -rf '" + stagingDir + "'";
+  1194→    system(cleanCmd.c_str());
+  1195→
+  1196→    // Standard .deb layout
+  1197→    std::string debRoot = stagingDir + "/usr";
+  1198→    std::string binDir       = debRoot + "/bin";
+  1199→    std::string libDir       = debRoot + "/lib/" + pkgName;
+  1200→    std::string shareDir     = debRoot + "/share/" + pkgName;
+  1201→    std::string appsDir      = debRoot + "/share/applications";
+  1202→    std::string iconsDir     = debRoot + "/share/icons/hicolor/256x256/apps";
+  1203→
+  1204→    system(("mkdir -p '" + binDir   + "'").c_str());
+  1205→    system(("mkdir -p '" + libDir   + "'").c_str());
+  1206→    system(("mkdir -p '" + shareDir + "'").c_str());
+  1207→    system(("mkdir -p '" + appsDir  + "'").c_str());
+  1208→    system(("mkdir -p '" + iconsDir + "'").c_str());
+  1209→
+  1210→    // ── lib/<pkg>/: copy all .b files (entry first), bantu.json, public/
+  1211→    system(("cp *.b '" + libDir + "/' 2>/dev/null").c_str());
+  1212→    system(("cp bantu.json '" + libDir + "/' 2>/dev/null").c_str());
+  1213→    system(("cp -r public '" + libDir + "/' 2>/dev/null").c_str());
+  1214→
+  1215→    // ── Optional: bundle the bantu interpreter
+  1216→    std::string bantuBinPath;
+  1217→    if (bundleBantu) {
+  1218→        bantuBinPath = findSelfBinary();
+  1219→        if (!bantuBinPath.empty()) {
+  1220→            system(("cp '" + bantuBinPath + "' '" + libDir + "/bantu' 2>/dev/null").c_str());
+  1221→            system(("chmod +x '" + libDir + "/bantu'").c_str());
+  1222→            std::cout << "  [INSTALLER] Bundled interpreter: " << bantuBinPath << "\n";
+  1223→        } else {
+  1224→            std::cerr << "  [WARN] Could not locate bantu binary to bundle.\n";
+  1225→            std::cerr << "         Set $BANTU_BIN to point at it, or rerun without --bundle-bantu.\n";
+  1226→        }
+  1227→    }
+  1228→
+  1229→    // ── bin/<pkg>: launcher script (this is what users run from terminal)
+  1230→    std::string launcherPath = binDir + "/" + pkgName;
+  1231→    std::ofstream launcher(launcherPath);
+  1232→    if (!launcher.is_open()) {
+  1233→        std::cerr << "  [ERROR] Cannot write launcher: " << launcherPath << "\n";
+  1234→        return 1;
+  1235→    }
+  1236→    launcher << "#!/bin/bash\n";
+  1237→    launcher << "# Generated by bantu installer v" << BANTU_VERSION << "\n";
+  1238→    launcher << "# App: " << appName << " v" << appVersion << "\n";
+  1239→    launcher << "set -e\n";
+  1240→    launcher << "APP_LIB=\"/usr/lib/" << pkgName << "\"\n";
+  1241→    launcher << "if [ ! -d \"$APP_LIB\" ]; then\n";
+  1242→    launcher << "    APP_LIB=\"$HOME/.local/lib/" << pkgName << "\"\n";
+  1243→    launcher << "fi\n";
+  1244→    launcher << "if [ -x \"$APP_LIB/bantu\" ]; then\n";
+  1245→    launcher << "    BANTU_BIN=\"$APP_LIB/bantu\"\n";
+  1246→    launcher << "elif command -v bantu >/dev/null 2>&1; then\n";
+  1247→    launcher << "    BANTU_BIN=\"bantu\"\n";
+  1248→    launcher << "else\n";
+  1249→    launcher << "    echo \"[ERROR] Bantu interpreter not found. Install Bantu or use --bundle-bantu.\" >&2\n";
+  1250→    launcher << "    exit 1\n";
+  1251→    launcher << "fi\n";
+  1252→    launcher << "cd \"$APP_LIB\"\n";
+  1253→    launcher << "exec \"$BANTU_BIN\" run " << entryFile << " \"$@\"\n";
+  1254→    launcher.close();
+  1255→    system(("chmod +x '" + launcherPath + "'").c_str());
+  1256→
+  1257→    // ── share/applications/<pkg>.desktop — launcher menu entry
+  1258→    std::string desktopPath = appsDir + "/" + pkgName + ".desktop";
+  1259→    std::ofstream desktop(desktopPath);
+  1260→    if (desktop.is_open()) {
+  1261→        desktop << "[Desktop Entry]\n";
+  1262→        desktop << "Version=" << appVersion << "\n";
+  1263→        desktop << "Type=Application\n";
+  1264→        desktop << "Name=" << appName << "\n";
+  1265→        desktop << "Comment=" << appName << " (Bantu app)\n";
+  1266→        desktop << "Exec=" << pkgName << "\n";
+  1267→        if (!iconPath.empty() && fileExists(iconPath)) {
+  1268→            // Copy the icon into the icons dir
+  1269→            system(("cp '" + iconPath + "' '" + iconsDir + "/" + pkgName + ".png' 2>/dev/null").c_str());
+  1270→            desktop << "Icon=" << pkgName << "\n";
+  1271→        } else {
+  1272→            desktop << "Icon=utilities-terminal\n";
+  1273→        }
+  1274→        desktop << "Terminal=true\n";
+  1275→        desktop << "Categories=Development;Utility;\n";
+  1276→        desktop.close();
+  1277→    }
+  1278→
+  1279→    // ── DEBIAN/control
+  1280→    std::string debianDir = stagingDir + "/DEBIAN";
+  1281→    system(("mkdir -p '" + debianDir + "'").c_str());
+  1282→    std::ofstream ctrl(debianDir + "/control");
+  1283→    if (!ctrl.is_open()) {
+  1284→        std::cerr << "  [ERROR] Cannot write DEBIAN/control\n";
+  1285→        return 1;
+  1286→    }
+  1287→    ctrl << "Package: " << pkgName << "\n";
+  1288→    ctrl << "Version: " << appVersion << "\n";
+  1289→    ctrl << "Architecture: amd64\n";
+  1290→    ctrl << "Maintainer: Assey Silivestir <assey@bantu-lang.dev>\n";
+  1291→    ctrl << "Section: utils\n";
+  1292→    ctrl << "Priority: optional\n";
+  1293→    ctrl << "Description: " << appName << " — Bantu desktop application\n";
+  1294→    ctrl << " Bundled Bantu interpreter + .b source files. Runs offline.\n";
+  1295→    ctrl << " Built with bantu installer v" << BANTU_VERSION << ".\n";
+  1296→    ctrl.close();
+  1297→
+  1298→    // ── DEBIAN/postinst — fix permissions after unpack
+  1299→    std::ofstream postinst(debianDir + "/postinst");
+  1300→    if (postinst.is_open()) {
+  1301→        postinst << "#!/bin/bash\n";
+  1302→        postinst << "set -e\n";
+  1303→        postinst << "chmod +x /usr/bin/" << pkgName << "\n";
+  1304→        postinst << "chmod -R +r /usr/lib/" << pkgName << " 2>/dev/null || true\n";
+  1305→        postinst << "if [ -x /usr/lib/" << pkgName << "/bantu ]; then\n";
+  1306→        postinst << "    chmod +x /usr/lib/" << pkgName << "/bantu\n";
+  1307→        postinst << "fi\n";
+  1308→        postinst << "exit 0\n";
+  1309→        postinst.close();
+  1310→        system(("chmod +x '" + debianDir + "/postinst'").c_str());
+  1311→    }
+  1312→
+  1313→    // ── DEBIAN/prerm — pre-remove (no-op, just placeholder)
+  1314→    std::ofstream prerm(debianDir + "/prerm");
+  1315→    if (prerm.is_open()) {
+  1316→        prerm << "#!/bin/bash\nset -e\nexit 0\n";
+  1317→        prerm.close();
+  1318→        system(("chmod +x '" + debianDir + "/prerm'").c_str());
+  1319→    }
+  1320→
+  1321→    // ── Build the .deb
+  1322→    std::string debName = pkgName + "_" + pkgVer + "_amd64.deb";
+  1323→    std::string buildCmd = "dpkg-deb --build '" + stagingDir + "' 'dist/" + debName + "'";
+  1324→    std::cout << "  [INSTALLER] Building .deb: " << debName << "\n";
+  1325→    int rc = system(buildCmd.c_str());
+  1326→    if (rc != 0) {
+  1327→        std::cerr << "\n  [ERROR] dpkg-deb failed (rc=" << rc << ").\n";
+  1328→        std::cerr << "  Staging dir left at: " << stagingDir << "\n";
+  1329→        std::cerr << "  On non-Debian Linux, install 'dpkg-deb' or use the staging dir directly.\n";
+  1330→        return 1;
+  1331→    }
+  1332→
+  1333→    std::cout << "\n  [INSTALLER] Linux installer ready:\n";
+  1334→    std::cout << "    dist/" << debName << "\n";
+  1335→    std::cout << "\n  Install on any Debian/Ubuntu machine:\n";
+  1336→    std::cout << "    sudo dpkg -i dist/" << debName << "\n";
+  1337→    std::cout << "    " << pkgName << "              # run from terminal\n";
+  1338→    std::cout << "    # Or find '" << appName << "' in your application launcher.\n";
+  1339→    std::cout << "\n  Uninstall:\n";
+  1340→    std::cout << "    sudo dpkg -r " << pkgName << "\n";
+  1341→    return 0;
+  1342→}
+  1343→
+  1344→// ── Windows: build an NSIS .exe installer ──
+  1345→static int buildWindowsInstaller(
+  1346→    const std::string& entryFile,
+  1347→    const std::string& appName,
+  1348→    const std::string& appVersion,
+  1349→    const std::string& iconPath,
+  1350→    bool bundleBantu)
+  1351→{
+  1352→    std::string distDir = "dist";
+  1353→    if (system(("mkdir -p " + distDir).c_str()) != 0) {
+  1354→        std::cerr << "  [ERROR] Cannot create dist/\n";
+  1355→        return 1;
+  1356→    }
+  1357→
+  1358→    std::string nsiPath = distDir + "/installer-" + appName + ".nsi";
+  1359→    std::ofstream nsi(nsiPath);
+  1360→    if (!nsi.is_open()) {
+  1361→        std::cerr << "  [ERROR] Cannot write " << nsiPath << "\n";
+  1362→        return 1;
+  1363→    }
+  1364→
+  1365→    nsi << "; Generated by bantu installer v" << BANTU_VERSION << "\n";
+  1366→    nsi << "!define APPNAME \"" << appName << "\"\n";
+  1367→    nsi << "!define APPVERSION \"" << appVersion << "\"\n";
+  1368→    nsi << "!define APPPUBLISHER \"Bantu\"\n";
+  1369→    nsi << "\n";
+  1370→    nsi << "Name \"${APPNAME} ${APPVERSION}\"\n";
+  1371→    nsi << "OutFile \"${APPNAME}-Setup-${APPVERSION}.exe\"\n";
+  1372→    nsi << "InstallDir \"$LOCALAPPDATA\\${APPNAME}\"\n";
+  1373→    nsi << "RequestExecutionLevel user\n";
+  1374→    nsi << "\n";
+  1375→    nsi << "Page directory\n";
+  1376→    nsi << "Page instfiles\n";
+  1377→    nsi << "\n";
+  1378→    nsi << "Section \"${APPNAME}\"\n";
+  1379→    nsi << "  SetOutPath \"$INSTDIR\"\n";
+  1380→    if (bundleBantu) {
+  1381→        nsi << "  ; Bundle the Bantu interpreter so the app runs on machines without Bantu installed.\n";
+  1382→        nsi << "  File /nonfatal \"bantu.exe\"\n";
+  1383→        nsi << "  File /nonfatal \"bantu\"\n";
+  1384→    }
+  1385→    nsi << "  ; Project source files\n";
+  1386→    nsi << "  File \"*.b\"\n";
+  1387→    nsi << "  File /nonfatal \"bantu.json\"\n";
+  1388→    nsi << "  File /nonfatal \"*.bat\"\n";
+  1389→    if (!iconPath.empty()) {
+  1390→        nsi << "  File /nonfatal \"" << iconPath << "\"\n";
+  1391→    }
+  1392→    nsi << "\n";
+  1393→    nsi << "  ; Launcher batch file\n";
+  1394→    nsi << "  FileOpen $0 \"$INSTDIR\\run-${APPNAME}.bat\" w\n";
+  1395→    nsi << "  FileWrite $0 '@echo off$\r$\n'\n";
+  1396→    nsi << "  FileWrite $0 'cd /d \"%~dp0\"$\r$\n'\n";
+  1397→    nsi << "  FileWrite $0 'if exist bantu.exe (bantu.exe run " << entryFile << ") else (bantu run " << entryFile << ")$\r$\n'\n";
+  1398→    nsi << "  FileWrite $0 'pause$\r$\n'\n";
+  1399→    nsi << "  FileClose $0\n";
+  1400→    nsi << "\n";
+  1401→    nsi << "  ; Start Menu shortcut\n";
+  1402→    nsi << "  CreateDirectory \"$SMPROGRAMS\\${APPNAME}\"\n";
+  1403→    nsi << "  CreateShortcut \"$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk\" \\\n";
+  1404→    nsi << "    \"$INSTDIR\\run-${APPNAME}.bat\" \"\" \"$INSTDIR\\bantu.exe\"\n";
+  1405→    nsi << "\n";
+  1406→    nsi << "  ; Uninstaller\n";
+  1407→    nsi << "  WriteUninstaller \"$INSTDIR\\uninstall-${APPNAME}.exe\"\n";
+  1408→    nsi << "  CreateShortcut \"$SMPROGRAMS\\${APPNAME}\\Uninstall.lnk\" \\\n";
+  1409→    nsi << "    \"$INSTDIR\\uninstall-${APPNAME}.exe\"\n";
+  1410→    nsi << "SectionEnd\n";
+  1411→    nsi << "\n";
+  1412→    nsi << "Section \"Uninstall\"\n";
+  1413→    nsi << "  Delete \"$INSTDIR\\*.*\"\n";
+  1414→    nsi << "  RMDir \"$INSTDIR\"\n";
+  1415→    nsi << "  Delete \"$SMPROGRAMS\\${APPNAME}\\*.*\"\n";
+  1416→    nsi << "  RMDir \"$SMPROGRAMS\\${APPNAME}\"\n";
+  1417→    nsi << "SectionEnd\n";
+  1418→    nsi.close();
+  1419→
+  1420→    std::cout << "  [INSTALLER] NSIS script written: " << nsiPath << "\n";
+  1421→    std::cout << "  [INSTALLER] App: " << appName << " v" << appVersion << "\n";
+  1422→    std::cout << "  [INSTALLER] Entry: " << entryFile << "\n";
+  1423→    if (bundleBantu) {
+  1424→        std::cout << "  [INSTALLER] Bundling: bantu.exe will be embedded if present in cwd.\n";
+  1425→    }
+  1426→
+  1427→    // Try to invoke makensis
+  1428→    int rc = system("makensis dist/installer.nsi 2>/dev/null || makensis dist/installer-*.nsi");
+  1429→    if (rc != 0) {
+  1430→        std::cerr << "\n  [WARN] makensis not found or failed (rc=" << rc << ").\n";
+  1431→        std::cerr << "  Install NSIS to generate the .exe:\n";
+  1432→        std::cerr << "    Linux:  sudo apt install nsis\n";
+  1433→        std::cerr << "    macOS:  brew install nsis\n";
+  1434→        std::cerr << "    Windows: https://nsis.sourceforge.io/Download\n";
+  1435→        std::cerr << "\n  Then run:\n";
+  1436→        std::cerr << "    makensis " << nsiPath << "\n";
+  1437→        std::cerr << "\n  Output: dist/" << appName << "-Setup-" << appVersion << ".exe\n";
+  1438→        return 0;  // not fatal — script is still valid
+  1439→    }
+  1440→
+  1441→    std::cout << "\n  [INSTALLER] Windows installer ready:\n";
+  1442→    std::cout << "    dist/" << appName << "-Setup-" << appVersion << ".exe\n";
+  1443→    return 0;
+  1444→}
+  1445→
+  1446→// ── macOS: build a .app bundle ──
+  1447→static int buildMacOSInstaller(
+  1448→    const std::string& entryFile,
+  1449→    const std::string& appName,
+  1450→    const std::string& appVersion,
+  1451→    const std::string& iconPath,
+  1452→    bool bundleBantu)
+  1453→{
+  1454→    std::string distDir = "dist";
+  1455→    if (system(("mkdir -p " + distDir).c_str()) != 0) {
+  1456→        std::cerr << "  [ERROR] Cannot create dist/\n";
+  1457→        return 1;
+  1458→    }
+  1459→
+  1460→    // .app bundle layout
+  1461→    std::string appDir   = distDir + "/" + appName + ".app";
+  1462→    std::string contents = appDir + "/Contents";
+  1463→    std::string macosDir = contents + "/MacOS";
+  1464→    std::string resDir   = contents + "/Resources";
+  1465→    system(("rm -rf '" + appDir + "'").c_str());
+  1466→    system(("mkdir -p '" + macosDir + "'").c_str());
+  1467→    system(("mkdir -p '" + resDir + "'").c_str());
+  1468→
+  1469→    // Copy source files into Resources/
+  1470→    system(("cp *.b '" + resDir + "/' 2>/dev/null").c_str());
+  1471→    system(("cp bantu.json '" + resDir + "/' 2>/dev/null").c_str());
+  1472→    system(("cp -r public '" + resDir + "/' 2>/dev/null").c_str());
+  1473→    if (!iconPath.empty() && fileExists(iconPath)) {
+  1474→        system(("cp '" + iconPath + "' '" + resDir + "/app.icns' 2>/dev/null").c_str());
+  1475→    }
+  1476→    if (bundleBantu) {
+  1477→        std::string bantuBinPath = findSelfBinary();
+  1478→        if (!bantuBinPath.empty()) {
+  1479→            system(("cp '" + bantuBinPath + "' '" + macosDir + "/bantu' 2>/dev/null").c_str());
+  1480→            system(("chmod +x '" + macosDir + "/bantu'").c_str());
+  1481→            std::cout << "  [INSTALLER] Bundled interpreter: " << bantuBinPath << "\n";
+  1482→        } else {
+  1483→            std::cerr << "  [WARN] Could not locate bantu binary to bundle.\n";
+  1484→        }
+  1485→    }
+  1486→
+  1487→    // Info.plist
+  1488→    std::ofstream plist(contents + "/Info.plist");
+  1489→    if (plist.is_open()) {
+  1490→        plist << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  1491→        plist << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n";
+  1492→        plist << "<plist version=\"1.0\">\n<dict>\n";
+  1493→        plist << "  <key>CFBundleName</key><string>" << appName << "</string>\n";
+  1494→        plist << "  <key>CFBundleDisplayName</key><string>" << appName << "</string>\n";
+  1495→        plist << "  <key>CFBundleIdentifier</key><string>dev.bantu-lang." << appName << "</string>\n";
+  1496→        plist << "  <key>CFBundleVersion</key><string>" << appVersion << "</string>\n";
+  1497→        plist << "  <key>CFBundleShortVersionString</key><string>" << appVersion << "</string>\n";
+  1498→        plist << "  <key>CFBundlePackageType</key><string>APPL</string>\n";
+  1499→        plist << "  <key>CFBundleExecutable</key><string>" << appName << "</string>\n";
+  1500→        plist << "  <key>CFBundleIconFile</key><string>app.icns</string>\n";
+  1501→        plist << "  <key>NSHighResolutionCapable</key><true/>\n";
+  1502→        plist << "  <key>LSMinimumSystemVersion</key><string>10.13</string>\n";
+  1503→        plist << "</dict>\n</plist>\n";
+  1504→        plist.close();
+  1505→    }
+  1506→
+  1507→    // Launcher script (the CFBundleExecutable)
+  1508→    std::string launcherPath = macosDir + "/" + appName;
+  1509→    std::ofstream launcher(launcherPath);
+  1510→    if (!launcher.is_open()) {
+  1511→        std::cerr << "  [ERROR] Cannot write launcher: " << launcherPath << "\n";
+  1512→        return 1;
+  1513→    }
+  1514→    launcher << "#!/bin/bash\n";
+  1515→    launcher << "# Generated by bantu installer v" << BANTU_VERSION << "\n";
+  1516→    launcher << "set -e\n";
+  1517→    launcher << "APP_DIR=\"$(dirname \"$(dirname \"$0\")\")/Resources\"\n";
+  1518→    launcher << "if [ -x \"$(dirname \"$0\")/bantu\" ]; then\n";
+  1519→    launcher << "    BANTU_BIN=\"$(dirname \"$0\")/bantu\"\n";
+  1520→    launcher << "elif command -v bantu >/dev/null 2>&1; then\n";
+  1521→    launcher << "    BANTU_BIN=\"bantu\"\n";
+  1522→    launcher << "else\n";
+  1523→    launcher << "    echo \"[ERROR] Bantu interpreter not found.\" >&2\n";
+  1524→    launcher << "    exit 1\n";
+  1525→    launcher << "fi\n";
+  1526→    launcher << "cd \"$APP_DIR\"\n";
+  1527→    launcher << "exec \"$BANTU_BIN\" run " << entryFile << " \"$@\"\n";
+  1528→    launcher.close();
+  1529→    system(("chmod +x '" + launcherPath + "'").c_str());
+  1530→
+  1531→    // PkgInfo
+  1532→    std::ofstream pkgInfo(contents + "/PkgInfo");
+  1533→    if (pkgInfo.is_open()) {
+  1534→        pkgInfo.write("APPL????", 8);
+  1535→        pkgInfo.close();
+  1536→    }
+  1537→
+  1538→    std::cout << "\n  [INSTALLER] macOS .app bundle ready:\n";
+  1539→    std::cout << "    " << appDir << "\n";
+  1540→    std::cout << "\n  Run on this machine:\n";
+  1541→    std::cout << "    open " << appDir << "\n";
+  1542→    std::cout << "\n  Distribute as a .dmg (requires hdiutil on macOS):\n";
+  1543→    std::cout << "    hdiutil create -volname '" << appName << "' -srcfolder " << appDir
+  1544→              << " -ov -format UDZO dist/" << appName << "-" << appVersion << ".dmg\n";
+  1545→    return 0;
+  1546→}
+  1547→
+  1548→
+  1549→// ── Android: build an Android Studio project + APK ──
+  1550→// Generates a full Gradle project under dist/android/<AppName>/
+  1551→// The project bundles the .b source files as app/src/main/assets/bantu/
+  1552→// and (if available) a pre-built arm64 bantu binary in jniLibs/arm64-v8a/.
+  1553→//
+  1554→// The MainActivity starts the bundled Bantu web server in a background
+  1555→// thread and renders the app in a WebView pointed at http://127.0.0.1:PORT/.
+  1556→// End users get a signed-debug APK they can sideload on any Android 7.0+
+  1557→// phone — the app runs fully offline with no Bantu installed on the device.
+  1558→//
+  1559→// If gradle is on PATH and ANDROID_HOME is set, we invoke `gradle assembleDebug`
+  1560→// automatically; otherwise the user opens the project in Android Studio or
+  1561→// runs `./build-apk.sh` once the SDK is installed.
+  1562→
+  1563→// Sanitize appName into a valid Java package name (lowercase, dot-separated).
+  1564→static std::string sanitizePkgName(const std::string& appName) {
+  1565→    std::string s = appName;
+  1566→    std::transform(s.begin(), s.end(), s.begin(),
+  1567→                   [](unsigned char c){ return std::tolower(c); });
+  1568→    std::string out;
+  1569→    for (char c : s) {
+  1570→        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.') {
+  1571→            out += c;
+  1572→        } else if (c == ' ' || c == '-' || c == '_') {
+  1573→            // word separator → dot
+  1574→            if (!out.empty() && out.back() != '.') out += '.';
+  1575→        }
+  1576→    }
+  1577→    // Strip leading/trailing dots
+  1578→    while (!out.empty() && out.front() == '.') out.erase(out.begin());
+  1579→    while (!out.empty() && out.back() == '.') out.pop_back();
+  1580→    if (out.empty()) out = "bantu.app";
+  1581→    // Must have at least one dot for Java package convention
+  1582→    if (out.find('.') == std::string::npos) out = "dev.bantu." + out;
+  1583→    // Don't start with a digit
+  1584→    if (!out.empty() && out[0] >= '0' && out[0] <= '9') out = "dev." + out;
+  1585→    return out;
+  1586→}
+  1587→
+  1588→// Convert package name to a Java class name (PascalCase, stripped of dots).
+  1589→static std::string sanitizeClassName(const std::string& appName) {
+  1590→    std::string s = appName;
+  1591→    std::string out;
+  1592→    bool capitalizeNext = true;
+  1593→    for (char c : s) {
+  1594→        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+  1595→            if (capitalizeNext && c >= 'a' && c <= 'z') {
+  1596→                out += (char)(c - 32);
+  1597→            } else {
+  1598→                out += c;
+  1599→            }
+  1600→            capitalizeNext = false;
+  1601→        } else {
+  1602→            capitalizeNext = true;
+  1603→        }
+  1604→    }
+  1605→    if (out.empty()) out = "BantuApp";
+  1606→    // Don't start with a digit
+  1607→    if (out[0] >= '0' && out[0] <= '9') out = "App" + out;
+  1608→    return out;
+  1609→}
+  1610→
+  1611→static int buildAndroidInstaller(
+  1612→    const std::string& entryFile,
+  1613→    const std::string& appName,
+  1614→    const std::string& appVersion,
+  1615→    const std::string& iconPath,
+  1616→    bool bundleBantu)
+  1617→{
+  1618→    std::string distDir = "dist";
+  1619→    fsMkdirP(distDir);
+  1620→
+  1621→    std::string pkgName    = sanitizePkgName(appName);
+  1622→    std::string className  = sanitizeClassName(appName);
+  1623→    std::string pkgPath    = pkgName;
+  1624→    std::replace(pkgPath.begin(), pkgPath.end(), '.', '/');
+  1625→
+  1626→    // Filesystem-safe project dir name (no spaces / special chars).
+  1627→    std::string safeDirName;
+  1628→    for (char c : appName) {
+  1629→        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+  1630→            || c == '-' || c == '_') {
+  1631→            safeDirName += c;
+  1632→        } else if (c == ' ' || c == '.') {
+  1633→            if (!safeDirName.empty() && safeDirName.back() != '-') safeDirName += '-';
+  1634→        }
+  1635→    }
+  1636→    while (!safeDirName.empty() && safeDirName.front() == '-') safeDirName.erase(safeDirName.begin());
+  1637→    while (!safeDirName.empty() && safeDirName.back() == '-') safeDirName.pop_back();
+  1638→    if (safeDirName.empty()) safeDirName = "BantuApp";
+  1639→
+  1640→    std::string projectDir = distDir + "/android/" + safeDirName;
+  1641→    fsRmRf(projectDir);
+  1642→    fsMkdirP(projectDir);
+  1643→
+  1644→    // ─── Project-level Gradle files ───
+  1645→    writeFile(projectDir + "/settings.gradle",
+  1646→        R"GRADLE(pluginManagement {
+  1647→    repositories {
+  1648→        google()
+  1649→        mavenCentral()
+  1650→        gradlePluginPortal()
+  1651→    }
+  1652→}
+  1653→dependencyResolutionManagement {
+  1654→    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+  1655→    repositories {
+  1656→        google()
+  1657→        mavenCentral()
+  1658→    }
+  1659→}
+  1660→rootProject.name = ")GRADLE" + appName + R"GRADLE("
+  1661→include ':app'
+  1662→)GRADLE");
+  1663→
+  1664→    writeFile(projectDir + "/build.gradle",
+  1665→        R"GRADLE(// Top-level build file — Generated by bantu installer v)GRADLE"
+  1666→        + BANTU_VERSION + R"GRADLE(
+  1667→plugins {
+  1668→    id 'com.android.application' version '8.1.0' apply false
+  1669→    id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
+  1670→}
+  1671→)GRADLE");
+  1672→
+  1673→    writeFile(projectDir + "/gradle.properties",
+  1674→        R"PROPS(org.gradle.jvmargs=-Xmx2048m
+  1675→android.useAndroidX=true
+  1676→kotlin.code.style=official
+  1677→android.nonTransitiveRClass=true
+  1678→)PROPS");
+  1679→
+  1680→    writeFile(projectDir + "/local.properties.sample",
+  1681→        "# Copy this file to local.properties and set your Android SDK path.\n"
+  1682→        "# Example (Linux/macOS):\n"
+  1683→        "sdk.dir=/home/you/Android/Sdk\n"
+  1684→        "# Example (Windows):\n"
+  1685→        "# sdk.dir=C:\\\\Users\\\\you\\\\AppData\\\\Local\\\\Android\\\\Sdk\n");
+  1686→
+  1687→    // .gitignore
+  1688→    writeFile(projectDir + "/.gitignore",
+  1689→        R"GIT(*.iml
+  1690→.gradle
+  1691→/local.properties
+  1692→/.idea
+  1693→.DS_Store
+  1694→/build
+  1695→/captures
+  1696→.externalNativeBuild
+  1697→.cxx
+  1698→local.properties
+  1699→/app/build
+  1700→*.apk
+  1701→*.ap_
+  1702→*.dex
+  1703→)GIT");
+  1704→
+  1705→    // ─── App module ───
+  1706→    std::string appDir     = projectDir + "/app";
+  1707→    std::string mainDir    = appDir + "/src/main";
+  1708→    std::string javaDir    = mainDir + "/java/" + pkgPath;
+  1709→    std::string resDir     = mainDir + "/res";
+  1710→    std::string assetsDir  = mainDir + "/assets/bantu";
+  1711→    std::string jniDir     = mainDir + "/jniLibs/arm64-v8a";
+  1712→    std::string jniX64Dir  = mainDir + "/jniLibs/x86_64";
+  1713→    fsMkdirP(javaDir);
+  1714→    fsMkdirP(resDir + "/layout");
+  1715→    fsMkdirP(resDir + "/values");
+  1716→    fsMkdirP(resDir + "/mipmap-anydpi-v26");
+  1717→    fsMkdirP(resDir + "/drawable");
+  1718→    fsMkdirP(resDir + "/xml");
+  1719→    fsMkdirP(assetsDir);
+  1720→    fsMkdirP(jniDir);
+  1721→    fsMkdirP(jniX64Dir);
+  1722→
+  1723→    // app/build.gradle
+  1724→    writeFile(appDir + "/build.gradle",
+  1725→        R"GRADLE(plugins {
+  1726→    id 'com.android.application'
+  1727→    id 'org.jetbrains.kotlin.android'
+  1728→}
+  1729→
+  1730→android {
+  1731→    namespace ')GRADLE" + pkgName + R"GRADLE('
+  1732→    compileSdk 34
+  1733→
+  1734→    defaultConfig {
+  1735→        applicationId ")GRADLE" + pkgName + R"GRADLE("
+  1736→        minSdk 24
+  1737→        targetSdk 34
+  1738→        versionCode 1
+  1739→        versionName ")GRADLE" + appVersion + R"GRADLE("
+  1740→        ndk {
+  1741→            abiFilters 'arm64-v8a', 'x86_64'
+  1742→        }
+  1743→    }
+  1744→
+  1745→    buildTypes {
+  1746→        release {
+  1747→            minifyEnabled false
+  1748→            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+  1749→        }
+  1750→        debug {
+  1751→            minifyEnabled false
+  1752→        }
+  1753→    }
+  1754→
+  1755→    compileOptions {
+  1756→        sourceCompatibility JavaVersion.VERSION_17
+  1757→        targetCompatibility JavaVersion.VERSION_17
+  1758→    }
+  1759→    kotlinOptions { jvmTarget = '17' }
+  1760→
+  1761→    // Important: extract native libs so we can chmod+exec the bundled bantu.
+  1762→    packagingOptions {
+  1763→        jniLibs { useLegacyPackaging true }
+  1764→    }
+  1765→}
+  1766→
+  1767→dependencies {
+  1768→    implementation 'androidx.core:core-ktx:1.12.0'
+  1769→    implementation 'androidx.appcompat:appcompat:1.6.1'
+  1770→    implementation 'com.google.android.material:material:1.11.0'
+  1771→    implementation 'androidx.webkit:webkit:1.9.0'
+  1772→}
+  1773→)GRADLE");
+  1774→
+  1775→    writeFile(appDir + "/proguard-rules.pro", "# Add project-specific ProGuard rules here.\n");
+  1776→
+  1777→    // AndroidManifest.xml
+  1778→    writeFile(mainDir + "/AndroidManifest.xml",
+  1779→        R"XML(<?xml version="1.0" encoding="utf-8"?>
+  1780→<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  1781→
+  1782→    <uses-permission android:name="android.permission.INTERNET" />
+  1783→    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  1784→
+  1785→    <application
+  1786→        android:allowBackup="true"
+  1787→        android:icon="@mipmap/ic_launcher"
+  1788→        android:label="@string/app_name"
+  1789→        android:roundIcon="@mipmap/ic_launcher"
+  1790→        android:supportsRtl="true"
+  1791→        android:theme="@style/Theme.BantuApp"
+  1792→        android:usesCleartextTraffic="true">
+  1793→        <activity
+  1794→            android:name=".)XML" + className + R"XML("
+  1795→            android:exported="true"
+  1796→            android:configChanges="orientation|screenSize|keyboardHidden">
+  1797→            <intent-filter>
+  1798→                <action android:name="android.intent.action.MAIN" />
+  1799→                <category android:name="android.intent.category.LAUNCHER" />
+  1800→            </intent-filter>
+  1801→        </activity>
+  1802→    </application>
+  1803→
+  1804→</manifest>
+  1805→)XML");
+  1806→
+  1807→    // MainActivity.kt
+  1808→    writeFile(javaDir + "/" + className + ".kt",
+  1809→        "package " + pkgName + "\n\n"
+  1810→        R"KT(import android.annotation.SuppressLint
+  1811→import android.os.Bundle
+  1812→import android.webkit.WebView
+  1813→import android.webkit.WebViewClient
+  1814→import android.widget.TextView
+  1815→import androidx.appcompat.app.AppCompatActivity
+  1816→import android.os.Handler
+  1817→import android.os.Looper
+  1818→import android.util.Log
+  1819→
+  1820→class )KT" + className + R"KT( : AppCompatActivity() {
+  1821→
+  1822→    private lateinit var webView: WebView
+  1823→    private lateinit var statusText: TextView
+  1824→    private val handler = Handler(Looper.getMainLooper())
+  1825→    private var runner: BantuRunner? = null
+  1826→
+  1827→    @SuppressLint("SetJavaScriptEnabled")
+  1828→    override fun onCreate(savedInstanceState: Bundle?) {
+  1829→        super.onCreate(savedInstanceState)
+  1830→        setContentView(R.layout.activity_main)
+  1831→
+  1832→        statusText = findViewById(R.id.status_text)
+  1833→        webView = findViewById(R.id.webview)
+  1834→        webView.settings.javaScriptEnabled = true
+  1835→        webView.settings.domStorageEnabled = true
+  1836→        webView.webViewClient = WebViewClient()
+  1837→        webView.settings.allowFileAccess = true
+  1838→        webView.settings.allowContentAccess = true
+  1839→
+  1840→        statusText.text = "Starting Bantu runtime..."
+  1841→
+  1842→        runner = BantuRunner(this).apply {
+  1843→            start { port ->
+  1844→                handler.post {
+  1845→                    if (port > 0) {
+  1846→                        statusText.text = "Bantu running on port $port"
+  1847→                        webView.loadUrl("http://127.0.0.1:$port/")
+  1848→                    } else {
+  1849→                        statusText.text = "Bantu failed to start (check logcat: tag 'BantuRunner')"
+  1850→                    }
+  1851→                }
+  1852→            }
+  1853→        }
+  1854→    }
+  1855→
+  1856→    override fun onDestroy() {
+  1857→        super.onDestroy()
+  1858→        runner?.stop()
+  1859→    }
+  1860→}
+  1861→)KT");
+  1862→
+  1863→    // BantuRunner.kt — extracts .b files + bundled bantu binary, runs as subprocess.
+  1864→    writeFile(javaDir + "/BantuRunner.kt",
+  1865→        "package " + pkgName + "\n\n"
+  1866→        R"KT(import android.content.Context
+  1867→import android.util.Log
+  1868→import java.io.File
+  1869→import java.io.FileOutputStream
+  1870→import java.util.concurrent.atomic.AtomicBoolean
+  1871→
+  1872→/**
+  1873→ * Extracts the bundled .b source files and the arm64 bantu binary from the
+  1874→ * app's assets/jniLibs into the app's private data directory, then launches
+  1875→ * `./bantu run )KT" + entryFile + R"KT(` as a subprocess and waits for the
+  1876→ * Sua HTTP server to bind a port (parsed from stdout).
+  1877→ *
+  1878→ * If no bundled bantu binary is present (the user did not provide one),
+  1879→ * the runner reports failure — see BUILD-ANDROID.md for how to cross-compile
+  1880→ * Bantu for Android arm64-v8a using the NDK.
+  1881→ */
+  1882→class BantuRunner(private val ctx: Context) {
+  1883→    private val TAG = "BantuRunner"
+  1884→    private val started = AtomicBoolean(false)
+  1885→    private var process: Process? = null
+  1886→    private var portThread: Thread? = null
+  1887→
+  1888→    fun start(onReady: (Int) -> Unit) {
+  1889→        if (!started.compareAndSet(false, true)) return
+  1890→
+  1891→        Thread {
+  1892→            try {
+  1893→                val workDir = File(ctx.filesDir, "bantu-app").apply { mkdirs() }
+  1894→
+  1895→                // 1. Extract .b files + bantu.json from assets/bantu/
+  1896→                extractAssets("bantu", workDir)
+  1897→
+  1898→                // 2. Extract the bundled bantu binary (if present) from jniLibs.
+  1899→                //    Android packages native libs under lib/<abi>/lib*.so — but
+  1900→                //    the file is the actual ELF we want to exec.
+  1901→                val bantuBin = File(workDir, "bantu")
+  1902→                val nativeDir = File(ctx.applicationInfo.nativeLibraryDir)
+  1903→                val bundled = File(nativeDir, "libbantu.so")
+  1904→                if (bundled.exists()) {
+  1905→                    bundled.copyTo(bantuBin, overwrite = true)
+  1906→                    @Suppress("UnsafeNewApiCall")
+  1907→                    bantuBin.setExecutable(true, true)
+  1908→                    Log.i(TAG, "Extracted bundled bantu: ${bantuBin.absolutePath} (${bundled.length()} bytes)")
+  1909→                } else {
+  1910→                    Log.e(TAG, "No bundled bantu binary at ${bundled.absolutePath}")
+  1911→                    Log.e(TAG, "See BUILD-ANDROID.md for cross-compile instructions (NDK required).")
+  1912→                    onReady(0)
+  1913→                    return@Thread
+  1914→                }
+  1915→
+  1916→                // 3. Launch `./bantu run )KT" + entryFile + R"KT(` and capture stdout.
+  1917→                val pb = ProcessBuilder(bantuBin.absolutePath, "run", ")KT" + entryFile + R"KT(")
+  1918→                    .directory(workDir)
+  1919→                    .redirectErrorStream(true)
+  1920→                pb.environment()["BANTU_QUIET"] = "1"
+  1921→                val p = pb.start()
+  1922→                process = p
+  1923→
+  1924→                // 4. Parse stdout for a port hint: "Listening on port 8080" or similar.
+  1925→                portThread = Thread {
+  1926→                    try {
+  1927→                        val reader = p.inputStream.bufferedReader()
+  1928→                        var line: String?
+  1929→                        var detectedPort = 0
+  1930→                        while (reader.readLine().also { line = it } != null) {
+  1931→                            val l = line ?: continue
+  1932→                            Log.i(TAG, l)
+  1933→                            if (detectedPort == 0) {
+  1934→                                // Sua server typically prints: "Sua server listening on port 8080"
+  1935→                                val m = Regex("""port\s+(\d{2,5})""").find(l.lowercase())
+  1936→                                if (m != null) {
+  1937→                                    detectedPort = m.groupValues[1].toInt()
+  1938→                                    onReady(detectedPort)
+  1939→                                }
+  1940→                            }
+  1941→                        }
+  1942→                        if (detectedPort == 0) onReady(0)
+  1943→                    } catch (e: Exception) {
+  1944→                        Log.e(TAG, "stdout reader died: ${e.message}")
+  1945→                        onReady(0)
+  1946→                    }
+  1947→                }
+  1948→                portThread?.start()
+  1949→            } catch (e: Exception) {
+  1950→                Log.e(TAG, "Failed to start Bantu: ${e.message}", e)
+  1951→                onReady(0)
+  1952→            }
+  1953→        }.start()
+  1954→    }
+  1955→
+  1956→    fun stop() {
+  1957→        try { process?.destroy() } catch (_: Exception) {}
+  1958→    }
+  1959→
+  1960→    private fun extractAssets(assetDir: String, destDir: File) {
+  1961→        val list = ctx.assets.list(assetDir) ?: return
+  1962→        for (name in list) {
+  1963→            val path = "$assetDir/$name"
+  1964→            val out = File(destDir, name)
+  1965→            val sub = ctx.assets.list(path)
+  1966→            if (sub != null && sub.isNotEmpty()) {
+  1967→                out.mkdirs()
+  1968→                extractAssets(path, out)
+  1969→            } else {
+  1970→                ctx.assets.open(path).use { input ->
+  1971→                    FileOutputStream(out).use { input.copyTo(it) }
+  1972→                }
+  1973→                Log.i(TAG, "Extracted asset: $name")
+  1974→            }
+  1975→        }
+  1976→    }
+  1977→}
+  1978→)KT");
+  1979→
+  1980→    // activity_main.xml
+  1981→    writeFile(resDir + "/layout/activity_main.xml",
+  1982→        R"XML(<?xml version="1.0" encoding="utf-8"?>
+  1983→<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  1984→    android:layout_width="match_parent"
+  1985→    android:layout_height="match_parent"
+  1986→    android:orientation="vertical">
+  1987→
+  1988→    <TextView
+  1989→        android:id="@+id/status_text"
+  1990→        android:layout_width="match_parent"
+  1991→        android:layout_height="wrap_content"
+  1992→        android:padding="8dp"
+  1993→        android:text="Initializing..."
+  1994→        android:textSize="12sp"
+  1995→        android:background="#1a1a2e"
+  1996→        android:textColor="#bd93f9" />
+  1997→
+  1998→    <WebView
+  1999→        android:id="@+id/webview"
+  2000→        android:layout_width="match_parent"
+
+[showing lines 1-2000 of 2760; use offset=2001 with limit to continue reading]

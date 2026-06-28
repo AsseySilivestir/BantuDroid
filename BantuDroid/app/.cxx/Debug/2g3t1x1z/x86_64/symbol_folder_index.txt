@@ -1,0 +1,1 @@
+/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64
