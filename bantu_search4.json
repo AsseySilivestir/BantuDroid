@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com/orgs/community/discussions/18624",
+    "name": "GitHub Code Search not returning results from some repositories",
+    "snippet": "We currently have a bug where some recently-created repositories aren't being indexed, not all code is indexed by the code search preview, aren't indexed. ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/orgs/community/discussions/189474",
+    "name": "Code Search not returning expected results across repositories",
+    "snippet": "Search for a key class or service; Use symbol: to find its definition; Search for usages with ClassName(; Narrow results with path: or language:.",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=UOIPBfPXkus",
+    "name": "Improving GitHub code search - YouTube",
+    "snippet": "Today, we are starting to roll out a technology preview for substantial improvements to searching code on GitHub.",
+    "host_name": "www.youtube.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/3616221/search-code-inside-a-github-project",
+    "name": "Search code inside a Github project - Stack Overflow",
+    "snippet": "The Code search will look through all of the code publicly hosted on GitHub. You can also filter by : the language language: the repository",
+    "host_name": "stackoverflow.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/orgs/community/discussions/13126",
+    "name": "Option to ignore forks · community · Discussion #13126 - GitHub",
+    "snippet": "There is now an option to exclude forks (or limit your search to forks). To exclude forks from your results: NOT is:fork is:fork",
+    "host_name": "github.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

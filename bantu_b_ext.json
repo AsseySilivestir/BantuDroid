@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://retrocomputingforum.com/t/b-a-simple-interpreter-compiler/489",
+    "name": "B -- A Simple Interpreter Compiler - Software - Retro Computing",
+    "snippet": "A very small but very powerful language, that will fit (with an OS!) into 8 KW of memory (a bit more than 16 KB.)",
+    "host_name": "retrocomputingforum.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.quora.com/When-we-say-that-programming-language-B-is-written-from-another-language-A-does-that-mean-the-compiler-interpreter-of-B-is-written-using-A",
+    "name": "When we say that programming language B is written from another",
+    "snippet": "Compilers and interpreters are actually quite often written in the language they are compiling and interpreting. This is known as bootstrapping ...",
+    "host_name": "www.quora.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=OLDTPlLa1bI",
+    "name": "The B Programming Language | Vintage Computing Festival Berlin",
+    "snippet": "... B compiler does not seem to have survived, but the interpreter, standard library and a few binaries have. With this it was possible to ...",
+    "host_name": "www.youtube.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://softwareengineering.stackexchange.com/questions/176509/what-does-it-mean-that-language-a-is-written-in-language-b",
+    "name": "What does it mean that \"language A is written in language B\"?",
+    "snippet": "It might be a compiler, or it might be an interpreter, or it might be some sort of virtual machine. All of those things are just computer ...",
+    "host_name": "softwareengineering.stackexchange.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/AskProgramming/comments/7rn8oq/is_b_a_compiled_or_interpreted_language",
+    "name": "Is B a compiled or interpreted language? : r/AskProgramming - Reddit",
+    "snippet": "So it's completely possible that there were/are both a compiler and an interpreter for B.",
+    "host_name": "www.reddit.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/B_(programming_language)",
+    "name": "B (programming language) - Wikipedia",
+    "snippet": "B was designed for recursive, non-numeric, machine-independent applications, such as system and language software. ... It was a typeless language, with the only ...",
+    "host_name": "en.wikipedia.org",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/groups/selftaughtprogrammers/posts/1622593274771067",
+    "name": "Hello friends, I am a beginner in learning programming and I still do",
+    "snippet": "They accomplish this usually by a program available on the machine to \"intrepret\" the code on the fly and translate it to machine code and other ...",
+    "host_name": "www.facebook.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://builtin.com/software-engineering-perspectives/compiler-vs-interpreter",
+    "name": "Compiler vs. Interpreter in Programming | Built In",
+    "snippet": "Both compilers and interpreters are used to convert a high-level language into machine code. However, there are differences between how and when they work.",
+    "host_name": "builtin.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/dchhitarka/introduction-to-programming-compiler-and-interpreter-23a4",
+    "name": "Introduction to Programming - Compiler and Interpreter",
+    "snippet": "A compiler is a translator that takes a high-level programming language such as Java as input and produces an output of low-level language.",
+    "host_name": "dev.to",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=ZWM-I2rRfP8",
+    "name": "Interpreter vs Compiler: What's the Difference? - YouTube",
+    "snippet": "In this video, we dive into the world of interpreters and compilers, breaking down their key differences and how they operate.",
+    "host_name": "www.youtube.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

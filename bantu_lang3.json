@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://github.com/toml-lang/toml/issues/687",
+    "name": "Relax bare key restrictions to allow additional unicode letters and",
+    "snippet": "GitHub CopilotWrite better code with AI · GitHub SparkBuild and deploy ... Bantu language). React with 3 marzer, clarfonthey and Eric ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.euppublishing.com/doi/10.3366/ijhac.2022.0289",
+    "name": "Developing a Rule-Based Machine-Translation System, Ewondo",
+    "snippet": "The project to develop a RBMT pair between Ewondo (ewo), a Bantu language spoken in Cameroon, and French, is aimed to fill a gap in data sourcing for this ...",
+    "host_name": "www.euppublishing.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://forums.theregister.com/forum/all/2022/03/23/c_not_a_language",
+    "name": "C: Everyone's favourite programming language isn't a programming",
+    "snippet": "The Zulu language has many non-sexual genders: \"Zulu, a Bantu language spoken mostly in South Africa, also has an agreement class system ...",
+    "host_name": "forums.theregister.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net/publication/397894931_Shona_spaCy_A_Morphological_Analyzer_for_an_Under-Resourced_Bantu_Language",
+    "name": "A Morphological Analyzer for an Under-Resourced Bantu Language",
+    "snippet": "Despite rapid advances in multilingual natural language processing (NLP), the Bantu language Shona remains under-served in terms of ...",
+    "host_name": "www.researchgate.net",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dl.acm.org/doi/10.1145/2858965.2814295",
+    "name": "Synthesizing Java expressions from free-form queries",
+    "snippet": "... Bantu language family, requires as basic computational aids a machine-readable lexicon containing a list of all the word roots in the language as well as a ...",
+    "host_name": "dl.acm.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://scispace.com/pdf/computational-morphology-and-bantu-language-learning-an-mm6jcfejqk.pdf",
+    "name": "[PDF] Computational morphology and Bantu language learning - SciSpace",
+    "snippet": "Bantu languages, although they belong to the same group – the Bantu language family. Finite state methods have also been applied to the ...",
+    "host_name": "scispace.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gitlab.com/akantu/akantu",
+    "name": "Akantu - GitLab",
+    "snippet": "Akantu means a little element in Kinyarwanda, a Bantu language. From now on it is also an open-source object-oriented library which has the ...",
+    "host_name": "gitlab.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/gwohlgen/ontodia_search_properties/blob/master/datafiles/props.json",
+    "name": "ontodia_search_properties/datafiles/props.json at master - GitHub",
+    "snippet": "... Bantu language\", \"datatype\": \"external-id\", \"id\": \"P2161\", \"label\": \"Guthrie ... programming language provided by the subject software binding ...",
+    "host_name": "github.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.academia.edu/72452902/Towards_Computational_Resource_Grammars_for_Runyankore_and_Rukiga",
+    "name": "Towards Computational Resource Grammars for Runyankore and",
+    "snippet": "... Bantu language family. Just like any other Bantu languages, bal unit consists of a pre-stem and stem. The stem is fur- morphologically, R&R are highly ...",
+    "host_name": "www.academia.edu",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://research.chalmers.se/publication/524069/file/524069_Fulltext.pdf",
+    "name": "[PDF] Lexical and Grammar Resource Engineering for Runyankore & Rukiga",
+    "snippet": "With regard to modelling of lexicons for Bantu languages, a Bantu Language. Model (BantuLM) was put forward by Bosch et al. (2018, 2006) after eliciting the ...",
+    "host_name": "research.chalmers.se",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
