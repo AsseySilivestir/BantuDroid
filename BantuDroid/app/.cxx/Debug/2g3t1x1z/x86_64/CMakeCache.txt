@@ -18,7 +18,7 @@
 ANDROID_ABI:UNINITIALIZED=x86_64
 
 //No help, variable specified on the command line.
-ANDROID_NDK:UNINITIALIZED=/home/z/android-ndk-r26d
+ANDROID_NDK:UNINITIALIZED=/home/z/android-sdk/ndk/26.3.11579264
 
 //No help, variable specified on the command line.
 ANDROID_PLATFORM:UNINITIALIZED=android-24
@@ -27,16 +27,16 @@ ANDROID_PLATFORM:UNINITIALIZED=android-24
 ANDROID_STL:UNINITIALIZED=c++_shared
 
 //Path to a program.
-CMAKE_ADDR2LINE:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-addr2line
+CMAKE_ADDR2LINE:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-addr2line
 
 //No help, variable specified on the command line.
 CMAKE_ANDROID_ARCH_ABI:UNINITIALIZED=x86_64
 
 //No help, variable specified on the command line.
-CMAKE_ANDROID_NDK:UNINITIALIZED=/home/z/android-ndk-r26d
+CMAKE_ANDROID_NDK:UNINITIALIZED=/home/z/android-sdk/ndk/26.3.11579264
 
 //Archiver
-CMAKE_AR:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+CMAKE_AR:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
 
 //Flags used by the compiler during all build types.
 CMAKE_ASM_FLAGS:STRING=
@@ -52,10 +52,10 @@ CMAKE_ASM_FLAGS_RELEASE:STRING=
 CMAKE_BUILD_TYPE:STRING=Debug
 
 //LLVM archiver
-CMAKE_CXX_COMPILER_AR:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+CMAKE_CXX_COMPILER_AR:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
 
 //Generate index for LLVM archive
-CMAKE_CXX_COMPILER_RANLIB:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
+CMAKE_CXX_COMPILER_RANLIB:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
 
 //Flags used by the compiler during all build types.
 CMAKE_CXX_FLAGS:STRING=-std=c++17
@@ -76,10 +76,10 @@ CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 CMAKE_CXX_STANDARD_LIBRARIES:STRING=-latomic -lm
 
 //LLVM archiver
-CMAKE_C_COMPILER_AR:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+CMAKE_C_COMPILER_AR:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
 
 //Generate index for LLVM archive
-CMAKE_C_COMPILER_RANLIB:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
+CMAKE_C_COMPILER_RANLIB:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
 
 //Flags used by the compiler during all build types.
 CMAKE_C_FLAGS:STRING=
@@ -127,7 +127,7 @@ CMAKE_INSTALL_PREFIX:PATH=/usr/local
 CMAKE_LIBRARY_OUTPUT_DIRECTORY:UNINITIALIZED=/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64
 
 //Path to a program.
-CMAKE_LINKER:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld
+CMAKE_LINKER:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld
 
 //No help, variable specified on the command line.
 CMAKE_MAKE_PROGRAM:UNINITIALIZED=/home/z/android-sdk/cmake/3.22.1/bin/ninja
@@ -152,13 +152,13 @@ CMAKE_MODULE_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Path to a program.
-CMAKE_NM:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
+CMAKE_NM:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
 
 //Path to a program.
-CMAKE_OBJCOPY:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy
+CMAKE_OBJCOPY:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy
 
 //Path to a program.
-CMAKE_OBJDUMP:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump
+CMAKE_OBJDUMP:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump
 
 //Value Computed by CMake
 CMAKE_PROJECT_DESCRIPTION:STATIC=
@@ -170,10 +170,10 @@ CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 CMAKE_PROJECT_NAME:STATIC=banturun
 
 //Ranlib
-CMAKE_RANLIB:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
+CMAKE_RANLIB:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
 
 //Path to a program.
-CMAKE_READELF:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
+CMAKE_READELF:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
 
 //No help, variable specified on the command line.
 CMAKE_RUNTIME_OUTPUT_DIRECTORY:UNINITIALIZED=/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64
@@ -225,7 +225,7 @@ CMAKE_STATIC_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Strip
-CMAKE_STRIP:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip
+CMAKE_STRIP:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip
 
 //No help, variable specified on the command line.
 CMAKE_SYSTEM_NAME:UNINITIALIZED=Android
@@ -234,7 +234,7 @@ CMAKE_SYSTEM_NAME:UNINITIALIZED=Android
 CMAKE_SYSTEM_VERSION:UNINITIALIZED=24
 
 //The CMake toolchain file
-CMAKE_TOOLCHAIN_FILE:FILEPATH=/home/z/android-ndk-r26d/build/cmake/android.toolchain.cmake
+CMAKE_TOOLCHAIN_FILE:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake
 
 //If this value is on, makefiles will be generated without the
 // .SILENT directive, and all commands will be echoed to the console
@@ -252,7 +252,7 @@ banturun_IS_TOP_LEVEL:STATIC=ON
 banturun_SOURCE_DIR:STATIC=/home/z/my-project/BantuDroid/app/src/main/cpp
 
 //Path to a library.
-log-lib:FILEPATH=/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/24/liblog.so
+log-lib:FILEPATH=/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/24/liblog.so
 
 
 ########################

@@ -2,7 +2,7 @@
 	"artifacts" : 
 	[
 		{
-			"path" : "/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/x86_64/libbanturun.so"
+			"path" : "/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/arm64-v8a/libbanturun.so"
 		}
 	],
 	"backtrace" : 1,
@@ -76,7 +76,7 @@
 			],
 			"sysroot" : 
 			{
-				"path" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+				"path" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
 			}
 		}
 	],
@@ -91,7 +91,7 @@
 			},
 			{
 				"backtrace" : 2,
-				"fragment" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/24/liblog.so",
+				"fragment" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/24/liblog.so",
 				"role" : "libraries"
 			},
 			{
@@ -102,7 +102,7 @@
 		"language" : "CXX",
 		"sysroot" : 
 		{
-			"path" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+			"path" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
 		}
 	},
 	"name" : "banturun",

@@ -27,8 +27,8 @@
   },
   "toolchains": {
     "toolchain": {
-      "cCompilerExecutable": "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
-      "cppCompilerExecutable": "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+      "cCompilerExecutable": "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
     }
   },
   "cFileExtensions": [],

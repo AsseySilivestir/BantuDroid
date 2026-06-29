@@ -1,3 +1,3 @@
 # ninja log v5
-0	580	1782677714790889556	CMakeFiles/banturun.dir/bantu_jni.cpp.o	d68d81bceaf6e54f
-581	650	1782677714865890083	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	566bdafafd8ab9b4
+0	444	1782703891642857733	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
+444	464	1782703891665857951	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1

@@ -23,7 +23,7 @@
 				}
 			],
 			"type" : "UNINITIALIZED",
-			"value" : "/home/z/android-ndk-r26d"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264"
 		},
 		{
 			"name" : "ANDROID_PLATFORM",
@@ -63,7 +63,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-addr2line"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-addr2line"
 		},
 		{
 			"name" : "CMAKE_ANDROID_ARCH_ABI",
@@ -87,7 +87,7 @@
 				}
 			],
 			"type" : "UNINITIALIZED",
-			"value" : "/home/z/android-ndk-r26d"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264"
 		},
 		{
 			"name" : "CMAKE_AR",
@@ -103,7 +103,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
 		},
 		{
 			"name" : "CMAKE_ASM_FLAGS",
@@ -251,7 +251,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
 		},
 		{
 			"name" : "CMAKE_CXX_COMPILER_RANLIB",
@@ -267,7 +267,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
 		},
 		{
 			"name" : "CMAKE_CXX_FLAGS",
@@ -379,7 +379,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
 		},
 		{
 			"name" : "CMAKE_C_COMPILER_RANLIB",
@@ -395,7 +395,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
 		},
 		{
 			"name" : "CMAKE_C_FLAGS",
@@ -735,7 +735,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld"
 		},
 		{
 			"name" : "CMAKE_MAKE_PROGRAM",
@@ -843,7 +843,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
 		},
 		{
 			"name" : "CMAKE_NUMBER_OF_MAKEFILES",
@@ -871,7 +871,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
 		},
 		{
 			"name" : "CMAKE_OBJDUMP",
@@ -887,7 +887,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
 		},
 		{
 			"name" : "CMAKE_PLATFORM_INFO_INITIALIZED",
@@ -951,7 +951,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
 		},
 		{
 			"name" : "CMAKE_READELF",
@@ -967,7 +967,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
 		},
 		{
 			"name" : "CMAKE_ROOT",
@@ -1199,7 +1199,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
 		},
 		{
 			"name" : "CMAKE_SYSTEM_NAME",
@@ -1235,7 +1235,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/build/cmake/android.toolchain.cmake"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake"
 		},
 		{
 			"name" : "CMAKE_UNAME",
@@ -1311,7 +1311,7 @@
 				}
 			],
 			"type" : "FILEPATH",
-			"value" : "/home/z/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/24/liblog.so"
+			"value" : "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/24/liblog.so"
 		}
 	],
 	"kind" : "cache",

@@ -264,7 +264,20 @@ public class BantuEngine {
     }
 
     public boolean isInstalled() {
-        return resolveBinaryPath() != null;
+        if (resolveBinaryPath() == null) return false;
+        // Also check that at least one .b project file exists
+        // (projects may not have been extracted if binary was found in nativeLibraryDir)
+        if (projectsDir.isDirectory()) {
+            File[] files = projectsDir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.getName().endsWith(".b")) return true;
+                }
+            }
+        }
+        // Binary exists but no projects — not fully installed
+        Log.w(TAG, "Binary found but no .b project files — will re-extract projects");
+        return false;
     }
 
     public String getInstalledVersion() {
