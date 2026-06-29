@@ -358,34 +358,37 @@ public class BantuEngine {
     }
 
     /**
-     * Core execution method. Tries JNI bridge first, then ProcessBuilder.
+     * Core execution method. Tries ProcessBuilder first (handles output correctly),
+     * then JNI bridge as fallback for strict SELinux devices.
      * Both approaches execute the binary DIRECTLY (no /system/bin/sh wrapper).
      */
     private BantuProcess executeBinary(String binaryPath, String[] args) throws IOException {
-        // Try JNI bridge first (fork+execv from native code bypasses SELinux)
-        if (BantuBridge.isJniAvailable()) {
-            try {
-                Log.i(TAG, "Attempting JNI bridge execution...");
-                return bridge.execute(binaryPath, args, projectsDir.getAbsolutePath());
-            } catch (IOException e) {
-                Log.w(TAG, "JNI bridge execution failed, falling back to ProcessBuilder: " + e.getMessage());
-            }
-        }
-
-        // Fallback: direct ProcessBuilder execution (works when binary is in nativeLibraryDir)
+        // PRIMARY: Direct ProcessBuilder execution (handles output streaming correctly)
+        // This works now that extractNativeLibs=true ensures libbantu.so is
+        // extracted to nativeLibraryDir with correct SELinux context.
         try {
             return executeViaProcessBuilder(binaryPath, args);
         } catch (IOException e) {
-            Log.e(TAG, "ProcessBuilder execution also failed: " + e.getMessage());
+            Log.w(TAG, "ProcessBuilder failed: " + e.getMessage());
 
-            // Last resort: try a different binary location
+            // FALLBACK: Try JNI bridge (fork+execv bypasses some SELinux restrictions)
+            if (BantuBridge.isJniAvailable()) {
+                try {
+                    Log.i(TAG, "Trying JNI bridge fallback...");
+                    return bridge.execute(binaryPath, args, projectsDir.getAbsolutePath());
+                } catch (IOException e2) {
+                    Log.e(TAG, "JNI bridge also failed: " + e2.getMessage());
+                }
+            }
+
+            // LAST RESORT: Try a different binary location
             String fallback = getFallbackBinaryPath(binaryPath);
             if (fallback != null) {
                 Log.i(TAG, "Trying fallback binary path: " + fallback);
                 try {
                     return executeViaProcessBuilder(fallback, args);
-                } catch (IOException e2) {
-                    Log.e(TAG, "Fallback also failed: " + e2.getMessage());
+                } catch (IOException e3) {
+                    Log.e(TAG, "Fallback also failed: " + e3.getMessage());
                 }
             }
 
