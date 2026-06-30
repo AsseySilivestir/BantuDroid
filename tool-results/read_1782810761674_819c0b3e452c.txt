@@ -1,0 +1,711 @@
+     1→package com.bantu.droid;
+     2→
+     3→import android.content.Context;
+     4→import android.content.SharedPreferences;
+     5→import android.os.Build;
+     6→import android.util.Log;
+     7→
+     8→import java.io.*;
+     9→import java.util.ArrayList;
+    10→import java.util.List;
+    11→
+    12→/**
+    13→ * Core Bantu Engine wrapper.
+    14→ * Manages the lifecycle of the Bantu binary on Android:
+    15→ * - Locates the binary from nativeLibraryDir (Android-extracted, always executable)
+    16→ * - Falls back to extracting from assets with chmod
+    17→ * - Provides methods to run Bantu commands and .b files
+    18→ * - Manages bundled project files
+    19→ *
+    20→ * ANDROID EXECUTION MODEL (critical for Android 10+):
+    21→ * - /data/data/pkg/files/ is mounted NOEXEC on Android 10+
+    22→ *   -> chmod 755 does NOT help, kernel blocks exec() at VFS level
+    23→ * - /data/app/.../lib/ (nativeLibraryDir) IS executable
+    24→ *   -> Android extracts lib/*.so from APK here with correct SELinux context
+    25→ * - We ship libbantu.so via jniLibs/ -> it lands in nativeLibraryDir
+    26→ * - android:extractNativeLibs="true" in manifest + useLegacyPackaging in gradle
+    27→ *   ensures .so files are actually extracted to disk (not kept in APK)
+    28→ * - We use direct ProcessBuilder execution (NOT /system/bin/sh -c)
+    29→ * - As fallback, we use JNI BantuBridge which does fork()+execv() from native code
+    30→ */
+    31→public class BantuEngine {
+    32→
+    33→    private static final String TAG = "BantuEngine";
+    34→    private static final String BINARY_NAME = "bantu";
+    35→    private static final String PREFS_NAME = "bantu_engine";
+    36→    private static final String KEY_INSTALLED = "engine_installed";
+    37→    private static final String KEY_VERSION = "engine_version";
+    38→
+    39→    private final Context context;
+    40→    private final File binDir;
+    41→    private final File projectsDir;
+    42→    private final File logDir;
+    43→    private final SharedPreferences prefs;
+    44→    private boolean installed = false;
+    45→
+    46→    /** Cached binary path -- resolved once, reused for all executions */
+    47→    private String cachedBinaryPath = null;
+    48→
+    49→    /** JNI bridge for fork+execv fallback */
+    50→    private BantuBridge bridge;
+    51→
+    52→    /** Static app context for BantuBridge */
+    53→    private static Context appContext;
+    54→
+    55→    public BantuEngine(Context context) {
+    56→        this.context = context.getApplicationContext();
+    57→        appContext = this.context;
+    58→        this.binDir = new File(context.getFilesDir(), "bin");
+    59→        this.projectsDir = new File(context.getFilesDir(), "projects");
+    60→        this.logDir = new File(context.getFilesDir(), "logs");
+    61→        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    62→
+    63→        // Initialize JNI bridge
+    64→        BantuBridge.init();
+    65→        this.bridge = new BantuBridge();
+    66→    }
+    67→
+    68→    /** Get app context (used by BantuBridge) */
+    69→    public static Context getAppContext() {
+    70→        return appContext;
+    71→    }
+    72→
+    73→    // -----------------------------------------------------------------
+    74→    // Binary Path Resolution (the critical fix)
+    75→    // -----------------------------------------------------------------
+    76→
+    77→    /**
+    78→     * Find the absolute path to the Bantu binary.
+    79→     *
+    80→     * Strategy (in order of reliability):
+    81→     * 1. nativeLibraryDir/libbantu.so -- Android-extracted, SELinux allows exec
+    82→     * 2. files/bin/bantu -- our manually extracted copy (needs chmod, may be noexec)
+    83→     * 3. codeCacheDir/bantu -- alternative writable location (may allow exec)
+    84→     *
+    85→     * We do NOT require canExecute() because Java's File.canExecute() uses
+    86→     * access(X_OK) which may return false due to SELinux even when the file
+    87→     * IS actually executable via exec(). We just check exists() and try chmod.
+    88→     */
+    89→    private String resolveBinaryPath() {
+    90→        if (cachedBinaryPath != null && new File(cachedBinaryPath).exists()) {
+    91→            return cachedBinaryPath;
+    92→        }
+    93→
+    94→        Log.i(TAG, "=== Resolving Bantu binary path ===");
+    95→
+    96→        // -- Strategy 1: nativeLibraryDir (BEST -- always executable on Android) --
+    97→        try {
+    98→            String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+    99→            if (nativeLibDir != null) {
+   100→                File libBinary = new File(nativeLibDir, "libbantu.so");
+   101→                Log.i(TAG, "Checking nativeLibraryDir: " + libBinary.getAbsolutePath());
+   102→                Log.i(TAG, "  exists=" + libBinary.exists() + " canRead=" + libBinary.canRead() + " canExecute=" + libBinary.canExecute());
+   103→
+   104→                if (libBinary.exists()) {
+   105→                    Log.i(TAG, "FOUND binary in nativeLibraryDir: " + libBinary.getAbsolutePath());
+   106→                    chmodBinary(libBinary);
+   107→                    cachedBinaryPath = libBinary.getAbsolutePath();
+   108→                    return cachedBinaryPath;
+   109→                } else {
+   110→                    Log.w(TAG, "libbantu.so NOT found in nativeLibraryDir: " + nativeLibDir);
+   111→                    // List what IS in nativeLibraryDir for debugging
+   112→                    File libDir = new File(nativeLibDir);
+   113→                    if (libDir.exists() && libDir.isDirectory()) {
+   114→                        String[] contents = libDir.list();
+   115→                        if (contents != null && contents.length > 0) {
+   116→                            Log.i(TAG, "nativeLibraryDir contents: " + String.join(", ", contents));
+   117→                        } else {
+   118→                            Log.w(TAG, "nativeLibraryDir is EMPTY! extractNativeLibs may be false");
+   119→                        }
+   120→                    } else {
+   121→                        Log.w(TAG, "nativeLibraryDir directory does not exist: " + nativeLibDir);
+   122→                    }
+   123→                }
+   124→            }
+   125→        } catch (Exception e) {
+   126→            Log.w(TAG, "nativeLibraryDir check failed", e);
+   127→        }
+   128→
+   129→        // -- Strategy 2: files/bin/bantu with chmod --
+   130→        File filesBinary = new File(binDir, BINARY_NAME);
+   131→        if (filesBinary.exists()) {
+   132→            Log.i(TAG, "Found binary in files/bin: " + filesBinary.getAbsolutePath());
+   133→            chmodBinary(filesBinary);
+   134→            cachedBinaryPath = filesBinary.getAbsolutePath();
+   135→            return cachedBinaryPath;
+   136→        }
+   137→
+   138→        // -- Strategy 3: codeCacheDir --
+   139→        try {
+   140→            File codeCacheDir = context.getCodeCacheDir();
+   141→            File cacheBinary = new File(codeCacheDir, "bantu");
+   142→            if (cacheBinary.exists()) {
+   143→                Log.i(TAG, "Found binary in codeCacheDir: " + cacheBinary.getAbsolutePath());
+   144→                chmodBinary(cacheBinary);
+   145→                cachedBinaryPath = cacheBinary.getAbsolutePath();
+   146→                return cachedBinaryPath;
+   147→            }
+   148→        } catch (Exception e) {
+   149→            Log.w(TAG, "codeCacheDir check failed", e);
+   150→        }
+   151→
+   152→        // -- No binary found anywhere --
+   153→        Log.e(TAG, "Bantu binary not found in any location!");
+   154→        return null;
+   155→    }
+   156→
+   157→    /**
+   158→     * Run chmod 755 on the binary file. This is a best-effort operation.
+   159→     */
+   160→    private void chmodBinary(File binary) {
+   161→        try {
+   162→            // Java API
+   163→            boolean setExec = binary.setExecutable(true, false);
+   164→            boolean setRead = binary.setReadable(true, false);
+   165→            Log.i(TAG, "Java setExecutable(" + binary.getAbsolutePath() + ") = " + setExec);
+   166→
+   167→            // Shell chmod
+   168→            Process p = new ProcessBuilder("/system/bin/chmod", "755",
+   169→                binary.getAbsolutePath()).start();
+   170→            int chmodResult = p.waitFor();
+   171→            Log.i(TAG, "chmod 755 on " + binary.getAbsolutePath() +
+   172→                " -> exit=" + chmodResult + ", canExecute=" + binary.canExecute());
+   173→        } catch (Exception e) {
+   174→            Log.w(TAG, "chmod failed for " + binary.getAbsolutePath(), e);
+   175→        }
+   176→    }
+   177→
+   178→    /**
+   179→     * Get the binary path, throwing if not found.
+   180→     */
+   181→    private String requireBinaryPath() throws IOException {
+   182→        String path = resolveBinaryPath();
+   183→        if (path == null) {
+   184→            throw new IOException(
+   185→                "Bantu binary not found. Please reinstall the app.\n" +
+   186→                "Searched: nativeLibraryDir, files/bin, codeCacheDir");
+   187→        }
+   188→        return path;
+   189→    }
+   190→
+   191→    // -----------------------------------------------------------------
+   192→    // Installation
+   193→    // -----------------------------------------------------------------
+   194→
+   195→    public void install(InstallListener listener) {
+   196→        new Thread(() -> {
+   197→            try {
+   198→                listener.onProgress("Creating directories...");
+   199→                binDir.mkdirs();
+   200→                projectsDir.mkdirs();
+   201→                logDir.mkdirs();
+   202→
+   203→                // Check if nativeLibraryDir already has our binary (from jniLibs)
+   204→                listener.onProgress("Checking native library...");
+   205→                String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+   206→                File libBinary = (nativeLibDir != null)
+   207→                    ? new File(nativeLibDir, "libbantu.so") : null;
+   208→
+   209→                if (libBinary != null && libBinary.exists()) {
+   210→                    Log.i(TAG, "Binary already in nativeLibraryDir -- no extraction needed");
+   211→                    chmodBinary(libBinary);
+   212→                    listener.onProgress("Binary ready in nativeLibraryDir");
+   213→                } else {
+   214→                    // Fallback: extract from assets to files/bin/
+   215→                    Log.i(TAG, "libbantu.so not in nativeLibraryDir, extracting from assets...");
+   216→                    listener.onProgress("Extracting Bantu binary...");
+   217→                    String abi = getSupportedAbi();
+   218→                    String assetPath = "bin/" + abi + "/bantu";
+   219→                    File binary = new File(binDir, BINARY_NAME);
+   220→
+   221→                    if (!assetExists(assetPath)) {
+   222→                        assetPath = "bin/bantu";
+   223→                    }
+   224→
+   225→                    extractAsset(assetPath, binary);
+   226→                    chmodBinary(binary);
+   227→
+   228→                    // Also try copying to codeCacheDir
+   229→                    try {
+   230→                        File cacheBinary = new File(context.getCodeCacheDir(), "bantu");
+   231→                        copyFile(binary, cacheBinary);
+   232→                        chmodBinary(cacheBinary);
+   233→                    } catch (Exception e) {
+   234→                        Log.w(TAG, "codeCacheDir copy failed", e);
+   235→                    }
+   236→                }
+   237→
+   238→                // Verify binary works
+   239→                listener.onProgress("Verifying engine...");
+   240→                String version = getVersionFromBinary();
+   241→                if (version == null) {
+   242→                    Log.w(TAG, "Could not read version from binary, but continuing");
+   243→                }
+   244→
+   245→                // Extract bundled projects
+   246→                listener.onProgress("Extracting project files...");
+   247→                extractProjects();
+   248→
+   249→                // Mark as installed
+   250→                prefs.edit()
+   251→                    .putBoolean(KEY_INSTALLED, true)
+   252→                    .putString(KEY_VERSION, version != null ? version : "unknown")
+   253→                    .apply();
+   254→
+   255→                installed = true;
+   256→                cachedBinaryPath = null; // force re-resolve
+   257→                listener.onSuccess(version);
+   258→
+   259→            } catch (Exception e) {
+   260→                Log.e(TAG, "Installation failed", e);
+   261→                listener.onError(e.getMessage());
+   262→            }
+   263→        }).start();
+   264→    }
+   265→
+   266→    public boolean isInstalled() {
+   267→        if (resolveBinaryPath() == null) return false;
+   268→        // Also check that at least one .b project file exists
+   269→        // (projects may not have been extracted if binary was found in nativeLibraryDir)
+   270→        if (projectsDir.isDirectory()) {
+   271→            File[] files = projectsDir.listFiles();
+   272→            if (files != null) {
+   273→                for (File f : files) {
+   274→                    if (f.getName().endsWith(".b")) return true;
+   275→                }
+   276→            }
+   277→        }
+   278→        // Binary exists but no projects — not fully installed
+   279→        Log.w(TAG, "Binary found but no .b project files — will re-extract projects");
+   280→        return false;
+   281→    }
+   282→
+   283→    public String getInstalledVersion() {
+   284→        return prefs.getString(KEY_VERSION, "unknown");
+   285→    }
+   286→
+   287→    public void reinstall(InstallListener listener) {
+   288→        deleteRecursive(binDir);
+   289→        prefs.edit().clear().apply();
+   290→        installed = false;
+   291→        cachedBinaryPath = null;
+   292→        install(listener);
+   293→    }
+   294→
+   295→    // -----------------------------------------------------------------
+   296→    // Running Bantu — uses JNI bridge or direct ProcessBuilder
+   297→    // -----------------------------------------------------------------
+   298→
+   299→    /**
+   300→     * Run a .b file with the Bantu interpreter.
+   301→     * Equivalent to: bantu run <file>
+   302→     */
+   303→    public BantuProcess run(String bantuFile) throws IOException {
+   304→        ensureInstalled();
+   305→
+   306→        File file = resolveFile(bantuFile);
+   307→        if (!file.exists()) {
+   308→            throw new FileNotFoundException(
+   309→                "File not found: " + bantuFile + "\n" +
+   310→                "Looked in: " + file.getAbsolutePath());
+   311→        }
+   312→
+   313→        String binaryPath = requireBinaryPath();
+   314→        Log.i(TAG, "Running: " + binaryPath + " run " + file.getAbsolutePath());
+   315→
+   316→        // Try JNI bridge first (more reliable on MIUI/Xiaomi), then ProcessBuilder
+   317→        return executeBinary(binaryPath, new String[]{"run", file.getAbsolutePath()});
+   318→    }
+   319→
+   320→    /**
+   321→     * Run a raw Bantu command with arbitrary arguments.
+   322→     * Example: execute("run", "server.b", "--port", "9090")
+   323→     */
+   324→    public BantuProcess execute(String... args) throws IOException {
+   325→        ensureInstalled();
+   326→
+   327→        String binaryPath = requireBinaryPath();
+   328→        Log.i(TAG, "Executing: " + binaryPath + " " + String.join(" ", args));
+   329→
+   330→        return executeBinary(binaryPath, args);
+   331→    }
+   332→
+   333→    /**
+   334→     * Run a command in the projects directory (for terminal-style operations).
+   335→     * Parses "bantu <args>" and executes directly via ProcessBuilder or JNI bridge.
+   336→     * NEVER uses /system/bin/sh -c (causes Permission denied on Android 10+).
+   337→     */
+   338→    public BantuProcess runShellCommand(String command) throws IOException {
+   339→        ensureInstalled();
+   340→
+   341→        String binaryPath = requireBinaryPath();
+   342→        String trimmed = command.trim();
+   343→
+   344→        // Parse "bantu <args>" or just "<args>"
+   345→        if (trimmed.startsWith("bantu ")) {
+   346→            trimmed = trimmed.substring("bantu ".length()).trim();
+   347→        } else if (trimmed.equals("bantu")) {
+   348→            trimmed = "--help";
+   349→        }
+   350→
+   351→        // Split args respecting quoted strings
+   352→        List<String> argList = parseArgs(trimmed);
+   353→        String[] args = argList.toArray(new String[0]);
+   354→
+   355→        Log.i(TAG, "Shell command: " + binaryPath + " " + String.join(" ", args));
+   356→
+   357→        return executeBinary(binaryPath, args);
+   358→    }
+   359→
+   360→    /**
+   361→     * Core execution method. Tries ProcessBuilder first (handles output correctly),
+   362→     * then JNI bridge as fallback for strict SELinux devices.
+   363→     * Both approaches execute the binary DIRECTLY (no /system/bin/sh wrapper).
+   364→     */
+   365→    private BantuProcess executeBinary(String binaryPath, String[] args) throws IOException {
+   366→        // PRIMARY: Direct ProcessBuilder execution (handles output streaming correctly)
+   367→        // This works now that extractNativeLibs=true ensures libbantu.so is
+   368→        // extracted to nativeLibraryDir with correct SELinux context.
+   369→        try {
+   370→            return executeViaProcessBuilder(binaryPath, args);
+   371→        } catch (IOException e) {
+   372→            Log.w(TAG, "ProcessBuilder failed: " + e.getMessage());
+   373→
+   374→            // FALLBACK: Try JNI bridge (fork+execv bypasses some SELinux restrictions)
+   375→            if (BantuBridge.isJniAvailable()) {
+   376→                try {
+   377→                    Log.i(TAG, "Trying JNI bridge fallback...");
+   378→                    return bridge.execute(binaryPath, args, projectsDir.getAbsolutePath());
+   379→                } catch (IOException e2) {
+   380→                    Log.e(TAG, "JNI bridge also failed: " + e2.getMessage());
+   381→                }
+   382→            }
+   383→
+   384→            // LAST RESORT: Try a different binary location
+   385→            String fallback = getFallbackBinaryPath(binaryPath);
+   386→            if (fallback != null) {
+   387→                Log.i(TAG, "Trying fallback binary path: " + fallback);
+   388→                try {
+   389→                    return executeViaProcessBuilder(fallback, args);
+   390→                } catch (IOException e3) {
+   391→                    Log.e(TAG, "Fallback also failed: " + e3.getMessage());
+   392→                }
+   393→            }
+   394→
+   395→            throw new IOException(
+   396→                "Cannot execute Bantu binary.\n" +
+   397→                "Path tried: " + binaryPath + "\n" +
+   398→                "Error: " + e.getMessage() + "\n\n" +
+   399→                "This may be caused by Android security restrictions (SELinux).\n" +
+   400→                "Please try: Settings > Apps > BantuDroid > Storage > Clear Data, then reopen.");
+   401→        }
+   402→    }
+   403→
+   404→    /**
+   405→     * Execute via ProcessBuilder with direct binary path.
+   406→     * NO /system/bin/sh wrapper — that's what causes Permission denied.
+   407→     */
+   408→    private BantuProcess executeViaProcessBuilder(String binaryPath, String[] args) throws IOException {
+   409→        String[] cmd = new String[args.length + 1];
+   410→        cmd[0] = binaryPath;
+   411→        System.arraycopy(args, 0, cmd, 1, args.length);
+   412→
+   413→        Log.i(TAG, "ProcessBuilder: " + String.join(" ", cmd));
+   414→
+   415→        ProcessBuilder pb = new ProcessBuilder(cmd);
+   416→        pb.directory(projectsDir);
+   417→        pb.redirectErrorStream(true);
+   418→        setupEnvironment(pb);
+   419→
+   420→        Process process = pb.start();
+   421→        return new BantuProcess(process, String.join(" ", args));
+   422→    }
+   423→
+   424→    /**
+   425→     * If the current binary path is from one strategy, return the path from another.
+   426→     */
+   427→    private String getFallbackBinaryPath(String currentPath) {
+   428→        String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+   429→
+   430→        if (currentPath.contains("lib") && currentPath.endsWith("libbantu.so")) {
+   431→            // Current is nativeLibraryDir, try files/bin
+   432→            File fallback = new File(binDir, BINARY_NAME);
+   433→            if (fallback.exists() && !fallback.getAbsolutePath().equals(currentPath)) {
+   434→                return fallback.getAbsolutePath();
+   435→            }
+   436→        } else {
+   437→            // Current is files/bin or elsewhere, try nativeLibraryDir
+   438→            if (nativeLibDir != null) {
+   439→                File fallback = new File(nativeLibDir, "libbantu.so");
+   440→                if (fallback.exists() && !fallback.getAbsolutePath().equals(currentPath)) {
+   441→                    return fallback.getAbsolutePath();
+   442→                }
+   443→            }
+   444→        }
+   445→
+   446→        return null;
+   447→    }
+   448→
+   449→    /**
+   450→     * Simple argument parser that handles quoted strings.
+   451→     */
+   452→    private List<String> parseArgs(String args) {
+   453→        List<String> result = new ArrayList<>();
+   454→        if (args == null || args.isEmpty()) return result;
+   455→
+   456→        StringBuilder current = new StringBuilder();
+   457→        boolean inSingleQuote = false;
+   458→        boolean inDoubleQuote = false;
+   459→
+   460→        for (int i = 0; i < args.length(); i++) {
+   461→            char c = args.charAt(i);
+   462→
+   463→            if (c == '\'' && !inDoubleQuote) {
+   464→                inSingleQuote = !inSingleQuote;
+   465→            } else if (c == '"' && !inSingleQuote) {
+   466→                inDoubleQuote = !inDoubleQuote;
+   467→            } else if (Character.isWhitespace(c) && !inSingleQuote && !inDoubleQuote) {
+   468→                if (current.length() > 0) {
+   469→                    result.add(current.toString());
+   470→                    current = new StringBuilder();
+   471→                }
+   472→            } else {
+   473→                current.append(c);
+   474→            }
+   475→        }
+   476→        if (current.length() > 0) {
+   477→            result.add(current.toString());
+   478→        }
+   479→
+   480→        return result;
+   481→    }
+   482→
+   483→    // -----------------------------------------------------------------
+   484→    // File Management
+   485→    // -----------------------------------------------------------------
+   486→
+   487→    public List<BantuFile> listProjects() {
+   488→        List<BantuFile> files = new ArrayList<>();
+   489→        File[] children = projectsDir.listFiles();
+   490→        if (children != null) {
+   491→            for (File f : children) {
+   492→                if (f.getName().endsWith(".b")) {
+   493→                    files.add(new BantuFile(f));
+   494→                }
+   495→            }
+   496→        }
+   497→        return files;
+   498→    }
+   499→
+   500→    public File createProject(String name, String content) throws IOException {
+   501→        if (!name.endsWith(".b")) name += ".b";
+   502→        File file = new File(projectsDir, name);
+   503→        try (FileWriter writer = new FileWriter(file)) {
+   504→            writer.write(content);
+   505→        }
+   506→        return file;
+   507→    }
+   508→
+   509→    public String readProject(String name) throws IOException {
+   510→        File file = resolveFile(name);
+   511→        StringBuilder sb = new StringBuilder();
+   512→        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+   513→            String line;
+   514→            while ((line = reader.readLine()) != null) {
+   515→                sb.append(line).append("\n");
+   516→            }
+   517→        }
+   518→        return sb.toString();
+   519→    }
+   520→
+   521→    public boolean deleteProject(String name) {
+   522→        return resolveFile(name).delete();
+   523→    }
+   524→
+   525→    public File importFile(File source) throws IOException {
+   526→        File dest = new File(projectsDir, source.getName());
+   527→        try (InputStream is = new FileInputStream(source);
+   528→             FileOutputStream os = new FileOutputStream(dest)) {
+   529→            byte[] buffer = new byte[8192];
+   530→            int len;
+   531→            while ((len = is.read(buffer)) != -1) {
+   532→                os.write(buffer, 0, len);
+   533→            }
+   534→        }
+   535→        return dest;
+   536→    }
+   537→
+   538→    public File getProjectsDir() { return projectsDir; }
+   539→    public File getLogDir() { return logDir; }
+   540→
+   541→    // -----------------------------------------------------------------
+   542→    // Internal helpers
+   543→    // -----------------------------------------------------------------
+   544→
+   545→    private void ensureInstalled() throws IllegalStateException {
+   546→        if (!isInstalled()) {
+   547→            throw new IllegalStateException(
+   548→                "Bantu engine is not installed. Call install() first.");
+   549→        }
+   550→    }
+   551→
+   552→    private void setupEnvironment(ProcessBuilder pb) {
+   553→        String binaryPath = resolveBinaryPath();
+   554→        String binaryDir = (binaryPath != null)
+   555→            ? new File(binaryPath).getParent()
+   556→            : binDir.getAbsolutePath();
+   557→
+   558→        pb.environment().put("HOME", context.getFilesDir().getAbsolutePath());
+   559→        pb.environment().put("BANTU_HOME", context.getFilesDir().getAbsolutePath());
+   560→        pb.environment().put("PATH", binaryDir + ":" + System.getenv("PATH"));
+   561→        pb.environment().put("TERM", "xterm-256color");
+   562→        pb.environment().put("LANG", "en_US.UTF-8");
+   563→
+   564→        // Set LD_LIBRARY_PATH so the bantu binary can find system shared libs
+   565→        String nativeLibDir = context.getApplicationInfo().nativeLibraryDir;
+   566→        if (nativeLibDir != null) {
+   567→            String existing = System.getenv("LD_LIBRARY_PATH");
+   568→            if (existing != null && !existing.isEmpty()) {
+   569→                pb.environment().put("LD_LIBRARY_PATH", nativeLibDir + ":" + existing);
+   570→            } else {
+   571→                pb.environment().put("LD_LIBRARY_PATH", nativeLibDir);
+   572→            }
+   573→        }
+   574→    }
+   575→
+   576→    private String getSupportedAbi() {
+   577→        if (Build.SUPPORTED_ABIS.length > 0) {
+   578→            return Build.SUPPORTED_ABIS[0];
+   579→        }
+   580→        return "arm64-v8a";
+   581→    }
+   582→
+   583→    private boolean assetExists(String path) {
+   584→        try {
+   585→            context.getAssets().open(path).close();
+   586→            return true;
+   587→        } catch (IOException e) {
+   588→            return false;
+   589→        }
+   590→    }
+   591→
+   592→    private void extractAsset(String assetPath, File target) throws IOException {
+   593→        try (InputStream is = context.getAssets().open(assetPath);
+   594→             FileOutputStream os = new FileOutputStream(target)) {
+   595→            byte[] buffer = new byte[8192];
+   596→            int len;
+   597→            while ((len = is.read(buffer)) != -1) {
+   598→                os.write(buffer, 0, len);
+   599→            }
+   600→        }
+   601→        target.setReadable(true, false);
+   602→        target.setWritable(true, true);
+   603→    }
+   604→
+   605→    private void copyFile(File src, File dest) throws IOException {
+   606→        try (InputStream is = new FileInputStream(src);
+   607→             FileOutputStream os = new FileOutputStream(dest)) {
+   608→            byte[] buffer = new byte[8192];
+   609→            int len;
+   610→            while ((len = is.read(buffer)) != -1) {
+   611→                os.write(buffer, 0, len);
+   612→            }
+   613→        }
+   614→        dest.setReadable(true, false);
+   615→        dest.setWritable(true, true);
+   616→    }
+   617→
+   618→    private void extractProjects() throws IOException {
+   619→        String[] projects = context.getAssets().list("projects");
+   620→        if (projects != null) {
+   621→            for (String project : projects) {
+   622→                String assetPath = "projects/" + project;
+   623→                File target = new File(projectsDir, project);
+   624→                if (!target.exists()) {
+   625→                    extractAsset(assetPath, target);
+   626→                }
+   627→            }
+   628→        }
+   629→    }
+   630→
+   631→    private String getVersionFromBinary() {
+   632→        try {
+   633→            String binaryPath = resolveBinaryPath();
+   634→            if (binaryPath == null) return null;
+   635→
+   636→            ProcessBuilder pb = new ProcessBuilder(binaryPath, "--version");
+   637→            pb.redirectErrorStream(true);
+   638→            Process p = pb.start();
+   639→
+   640→            BufferedReader reader = new BufferedReader(
+   641→                new InputStreamReader(p.getInputStream()));
+   642→            String line = reader.readLine();
+   643→            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+   644→            p.destroy();
+   645→
+   646→            return line != null ? line.trim() : null;
+   647→        } catch (Exception e) {
+   648→            Log.w(TAG, "getVersionFromBinary failed", e);
+   649→            return null;
+   650→        }
+   651→    }
+   652→
+   653→    private File resolveFile(String name) {
+   654→        File file = new File(name);
+   655→        if (file.isAbsolute() && file.exists()) return file;
+   656→
+   657→        file = new File(projectsDir, name);
+   658→        if (file.exists()) return file;
+   659→
+   660→        if (!name.endsWith(".b")) {
+   661→            file = new File(projectsDir, name + ".b");
+   662→            if (file.exists()) return file;
+   663→        }
+   664→
+   665→        return new File(projectsDir, name);
+   666→    }
+   667→
+   668→    private void deleteRecursive(File file) {
+   669→        if (file.isDirectory()) {
+   670→            File[] children = file.listFiles();
+   671→            if (children != null) {
+   672→                for (File child : children) {
+   673→                    deleteRecursive(child);
+   674→                }
+   675→            }
+   676→        }
+   677→        file.delete();
+   678→    }
+   679→
+   680→    // -----------------------------------------------------------------
+   681→    // Inner classes & interfaces
+   682→    // -----------------------------------------------------------------
+   683→
+   684→    public interface InstallListener {
+   685→        void onProgress(String message);
+   686→        void onSuccess(String version);
+   687→        void onError(String message);
+   688→    }
+   689→
+   690→    public static class BantuFile {
+   691→        private final File file;
+   692→
+   693→        public BantuFile(File file) {
+   694→            this.file = file;
+   695→        }
+   696→
+   697→        public String getName() { return file.getName(); }
+   698→        public String getPath() { return file.getAbsolutePath(); }
+   699→        public long getSize() { return file.length(); }
+   700→        public long getLastModified() { return file.lastModified(); }
+   701→        public File getFile() { return file; }
+   702→
+   703→        public String getSizeFormatted() {
+   704→            long size = file.length();
+   705→            if (size < 1024) return size + " B";
+   706→            if (size < 1024 * 1024) return String.format("%.1f KB", size / 1024.0);
+   707→            return String.format("%.1f MB", size / (1024.0 * 1024.0));
+   708→        }
+   709→    }
+   710→}
+   711→

@@ -29,26 +29,19 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * Terminal emulator activity.
- * Provides a full terminal interface for running Bantu commands
- * and real shell commands (cd, pwd, ls, cat, etc.).
+ * Terminal emulator activity — full shell with CWD tracking.
  *
  * Features:
- * - Green-on-black terminal display with monospace font
- * - Working directory tracking with cd/pwd
- * - Real filesystem commands: ls, dir, cat, mkdir, rmdir, rm, touch, cp, mv, pwd, cd
- * - Bantu commands: bantu run <file>, bantu <args>
- * - Server commands: start-service, stop-service
- * - Shell passthrough: any unrecognized command runs via /system/bin/sh
- * - Command input with history (up/down arrows)
- * - Quick action buttons for common commands
- * - Background server start/stop with notification
- * - Process output streaming in real-time
+ * - Persistent Current Working Directory (CWD)
+ * - Real filesystem commands: pwd, ls, cd, cat, mkdir, rmdir, rm, touch, cp, mv
+ * - ALL Bantu CLI commands executed with correct CWD
+ * - Shell passthrough for unknown commands
+ * - Auto project registration after bantu init
+ * - Bantu Projects list sync
  */
 public class TerminalActivity extends AppCompatActivity
     implements BantuProcess.OutputListener {
@@ -67,7 +60,7 @@ public class TerminalActivity extends AppCompatActivity
     private StringBuilder outputBuffer;
     private CommandHistory commandHistory;
 
-    // Working directory — starts at app files dir
+    // Current Working Directory — starts at workspace root
     private File currentDir;
 
     @Override
@@ -79,8 +72,8 @@ public class TerminalActivity extends AppCompatActivity
         outputBuffer = new StringBuilder();
         commandHistory = new CommandHistory();
 
-        // Start in app's files directory
-        currentDir = getFilesDir();
+        // Start CWD at the Bantu workspace root
+        currentDir = engine.getWorkspaceRoot();
 
         // Bind views
         terminalOutput = findViewById(R.id.terminal_output);
@@ -92,10 +85,9 @@ public class TerminalActivity extends AppCompatActivity
         quickActions = findViewById(R.id.quick_actions);
         quickActionsScroll = findViewById(R.id.quick_actions_scroll);
 
-        // Terminal styling
         terminalOutput.setTypeface(Typeface.MONOSPACE);
 
-        // Welcome message
+        // Welcome
         appendOutput(getString(R.string.terminal_welcome));
         appendOutput("Working directory: " + currentDir.getAbsolutePath() + "\n\n");
 
@@ -127,23 +119,25 @@ public class TerminalActivity extends AppCompatActivity
         String runFile = getIntent().getStringExtra("run_file");
         if (runFile != null) {
             commandInput.setText("bantu run " + runFile);
-            // Auto-run after a short delay
             commandInput.postDelayed(this::runCommand, 500);
         }
 
-        // Run button
+        // Check if launched with a directory to open
+        String openDir = getIntent().getStringExtra("open_dir");
+        if (openDir != null) {
+            File d = new File(openDir);
+            if (d.isDirectory()) {
+                currentDir = d;
+            }
+        }
+
         btnRun.setOnClickListener(v -> runCommand());
-
-        // Stop button
         btnStop.setOnClickListener(v -> stopProcess());
-
-        // Clear button
         btnClear.setOnClickListener(v -> {
             outputBuffer.setLength(0);
             terminalOutput.setText("");
         });
 
-        // Enter key in input field
         commandInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
@@ -153,7 +147,6 @@ public class TerminalActivity extends AppCompatActivity
             return false;
         });
 
-        // Command history navigation with volume keys or dpad
         commandInput.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
@@ -170,7 +163,6 @@ public class TerminalActivity extends AppCompatActivity
             return false;
         });
 
-        // Request notification permission (Android 13+)
         requestNotificationPermission();
     }
 
@@ -194,24 +186,18 @@ public class TerminalActivity extends AppCompatActivity
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Command execution
+    // Command execution — the heart of the terminal
     // ──────────────────────────────────────────────────────────────
 
     private void runCommand() {
         String cmd = commandInput.getText().toString().trim();
         if (cmd.isEmpty()) return;
 
-        // Add to history
         commandHistory.add(cmd);
 
-        // Display command in terminal with prompt showing current dir
-        String dirName = currentDir.getName();
-        if (currentDir.getAbsolutePath().equals(getFilesDir().getAbsolutePath())) {
-            dirName = "~";
-        }
-        appendOutput(dirName + " $ " + cmd + "\n");
-
-        // Clear input
+        // Show prompt with CWD
+        String prompt = promptString();
+        appendOutput(prompt + cmd + "\n");
         commandInput.setText("");
 
         try {
@@ -219,20 +205,14 @@ public class TerminalActivity extends AppCompatActivity
             if (cmd.equals("pwd")) {
                 appendOutput(currentDir.getAbsolutePath() + "\n\n");
 
-            } else if (cmd.startsWith("cd ")) {
-                handleCd(cmd.substring(3).trim());
-
-            } else if (cmd.equals("cd")) {
-                // cd with no args → go to app files dir
-                currentDir = getFilesDir();
-                appendOutput(currentDir.getAbsolutePath() + "\n\n");
+            } else if (cmd.startsWith("cd ") || cmd.equals("cd")) {
+                handleCd(cmd.equals("cd") ? null : cmd.substring(3).trim());
 
             } else if (cmd.equals("ls") || cmd.equals("dir")) {
                 handleLs(null);
 
             } else if (cmd.startsWith("ls ") || cmd.startsWith("dir ")) {
-                String path = cmd.split("\\s+", 2)[1].trim();
-                handleLs(path);
+                handleLs(cmd.split("\\s+", 2)[1].trim());
 
             } else if (cmd.startsWith("cat ")) {
                 handleCat(cmd.substring(4).trim());
@@ -269,33 +249,52 @@ public class TerminalActivity extends AppCompatActivity
                 appendOutput("bantu\n\n");
 
             } else if (cmd.equals("hostname")) {
-                appendOutput(android.os.Build.MODEL + "\n\n");
+                appendOutput(Build.MODEL + "\n\n");
 
             } else if (cmd.startsWith("start-service ")) {
-                String file = cmd.substring("start-service ".length()).trim();
-                startServerService(file);
+                startServerService(cmd.substring("start-service ".length()).trim());
 
             } else if (cmd.equals("stop-service")) {
                 stopServerService();
 
-            // ── Bantu engine commands ──
-            } else if (cmd.startsWith("bantu run ")) {
-                String file = cmd.substring("bantu run ".length()).trim();
-                currentProcess = engine.run(file);
-                currentProcess.readOutput(this);
-                setRunning(true);
-
+            // ── ALL Bantu CLI commands — executed with CWD ──
             } else if (cmd.startsWith("bantu ")) {
-                String[] args = cmd.substring("bantu ".length()).trim().split("\\s+");
-                currentProcess = engine.execute(args);
-                currentProcess.readOutput(this);
-                setRunning(true);
+                runBantuCommand(cmd);
 
-            // ── Shell passthrough — run via /system/bin/sh ──
+            } else if (cmd.equals("bantu")) {
+                // Just "bantu" → show help
+                runBantuCommand("bantu --help");
+
+            // ── Shell passthrough ──
             } else {
-                runShellCommand(cmd);
+                runShellPassthrough(cmd);
             }
 
+        } catch (Exception e) {
+            appendOutput("Error: " + e.getMessage() + "\n\n");
+        }
+    }
+
+    private String promptString() {
+        String dirName = currentDir.getAbsolutePath();
+        String workspace = engine.getWorkspaceRoot().getAbsolutePath();
+        if (dirName.equals(workspace)) {
+            dirName = "~";
+        } else if (dirName.startsWith(workspace + "/")) {
+            dirName = "~" + dirName.substring(workspace.length());
+        }
+        return dirName + " $ ";
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Bantu CLI — all commands executed with correct CWD
+    // ──────────────────────────────────────────────────────────────
+
+    private void runBantuCommand(String cmd) {
+        try {
+            currentProcess = engine.runShellCommandInDir(currentDir, cmd);
+            currentProcess.readOutput(this);
+            setRunning(true);
         } catch (Exception e) {
             appendOutput("Error: " + e.getMessage() + "\n\n");
         }
@@ -306,22 +305,26 @@ public class TerminalActivity extends AppCompatActivity
     // ──────────────────────────────────────────────────────────────
 
     private File resolvePath(String path) {
-        if (path.startsWith("/")) {
-            return new File(path);
-        } else if (path.equals("~") || path.startsWith("~/")) {
+        if (path.startsWith("/")) return new File(path);
+        if (path.equals("~") || path.startsWith("~/")) {
             String rest = path.equals("~") ? "" : path.substring(2);
-            return new File(getFilesDir(), rest);
-        } else if (path.equals("..")) {
-            File parent = currentDir.getParentFile();
-            return parent != null ? parent : currentDir;
-        } else if (path.equals(".")) {
-            return currentDir;
-        } else {
-            return new File(currentDir, path);
+            return new File(engine.getWorkspaceRoot(), rest);
         }
+        if (path.equals("..")) {
+            File parent = currentDir.getParentFile();
+            // Don't go above workspace root
+            return (parent != null) ? parent : currentDir;
+        }
+        if (path.equals(".")) return currentDir;
+        return new File(currentDir, path);
     }
 
     private void handleCd(String path) {
+        if (path == null || path.isEmpty() || path.equals("~")) {
+            currentDir = engine.getWorkspaceRoot();
+            appendOutput(currentDir.getAbsolutePath() + "\n\n");
+            return;
+        }
         File target = resolvePath(path);
         if (target.isDirectory() && target.canRead()) {
             currentDir = target;
@@ -336,7 +339,12 @@ public class TerminalActivity extends AppCompatActivity
     private void handleLs(String path) {
         File dir = path != null ? resolvePath(path) : currentDir;
         if (!dir.isDirectory()) {
-            appendOutput("ls: not a directory: " + dir.getPath() + "\n\n");
+            // Maybe it's a file pattern? Just show the file
+            if (dir.exists()) {
+                appendOutput(dir.getName() + "\n\n");
+            } else {
+                appendOutput("ls: cannot access: " + path + "\n\n");
+            }
             return;
         }
         File[] entries = dir.listFiles();
@@ -345,7 +353,6 @@ public class TerminalActivity extends AppCompatActivity
             return;
         }
 
-        // Sort: directories first, then files
         Arrays.sort(entries, (a, b) -> {
             if (a.isDirectory() && !b.isDirectory()) return -1;
             if (!a.isDirectory() && b.isDirectory()) return 1;
@@ -355,7 +362,7 @@ public class TerminalActivity extends AppCompatActivity
         SimpleDateFormat sdf = new SimpleDateFormat("MMM dd HH:mm", Locale.getDefault());
         for (File f : entries) {
             String type = f.isDirectory() ? "d" : "-";
-            String size = f.isDirectory() ? "" : String.format("%8d", f.length());
+            String size = f.isDirectory() ? "      -" : String.format("%7d", f.length());
             String date = sdf.format(new Date(f.lastModified()));
             String name = f.getName();
             if (f.isDirectory()) name += "/";
@@ -367,11 +374,11 @@ public class TerminalActivity extends AppCompatActivity
     private void handleCat(String path) {
         File file = resolvePath(path);
         if (!file.exists()) {
-            appendOutput("cat: no such file: " + path + "\n\n");
+            appendOutput("cat: " + path + ": No such file\n\n");
             return;
         }
         if (file.isDirectory()) {
-            appendOutput("cat: is a directory: " + path + "\n\n");
+            appendOutput("cat: " + path + ": Is a directory\n\n");
             return;
         }
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
@@ -381,7 +388,7 @@ public class TerminalActivity extends AppCompatActivity
             }
             appendOutput("\n");
         } catch (Exception e) {
-            appendOutput("cat: error reading file: " + e.getMessage() + "\n\n");
+            appendOutput("cat: error: " + e.getMessage() + "\n\n");
         }
     }
 
@@ -390,33 +397,42 @@ public class TerminalActivity extends AppCompatActivity
         if (dir.mkdirs() || dir.exists()) {
             appendOutput("Created: " + dir.getAbsolutePath() + "\n\n");
         } else {
-            appendOutput("mkdir: failed to create: " + path + "\n\n");
+            appendOutput("mkdir: failed: " + path + "\n\n");
         }
     }
 
     private void handleRmdir(String path) {
         File dir = resolvePath(path);
         if (!dir.exists()) {
-            appendOutput("rmdir: no such directory: " + path + "\n\n");
+            appendOutput("rmdir: " + path + ": No such directory\n\n");
             return;
         }
         if (dir.delete()) {
             appendOutput("Removed: " + dir.getAbsolutePath() + "\n\n");
         } else {
-            appendOutput("rmdir: directory not empty or cannot delete: " + path + "\n\n");
+            appendOutput("rmdir: directory not empty: " + path + "\n\n");
         }
     }
 
     private void handleRm(String path) {
+        // Support rm -rf for directories
+        boolean recursive = false;
+        if (path.startsWith("-rf ") || path.startsWith("-r ")) {
+            recursive = true;
+            path = path.split("\\s+", 2)[1];
+        }
         File file = resolvePath(path);
         if (!file.exists()) {
-            appendOutput("rm: no such file: " + path + "\n\n");
+            appendOutput("rm: " + path + ": No such file\n\n");
             return;
         }
-        if (file.delete()) {
+        if (file.isDirectory() && recursive) {
+            deleteRecursive(file);
+            appendOutput("Removed: " + file.getAbsolutePath() + "\n\n");
+        } else if (file.delete()) {
             appendOutput("Removed: " + file.getAbsolutePath() + "\n\n");
         } else {
-            appendOutput("rm: cannot delete: " + path + "\n\n");
+            appendOutput("rm: cannot delete: " + path + " (use rm -rf for directories)\n\n");
         }
     }
 
@@ -425,8 +441,6 @@ public class TerminalActivity extends AppCompatActivity
         try {
             if (file.createNewFile() || file.setLastModified(System.currentTimeMillis())) {
                 appendOutput("Created: " + file.getAbsolutePath() + "\n\n");
-            } else {
-                appendOutput("touch: failed: " + path + "\n\n");
             }
         } catch (Exception e) {
             appendOutput("touch: error: " + e.getMessage() + "\n\n");
@@ -443,7 +457,7 @@ public class TerminalActivity extends AppCompatActivity
             File src = resolvePath(parts[0]);
             File dst = resolvePath(parts[1]);
             if (!src.exists()) {
-                appendOutput("cp: source not found: " + parts[0] + "\n\n");
+                appendOutput("cp: " + parts[0] + ": No such file\n\n");
                 return;
             }
             copyFile(src, dst);
@@ -462,13 +476,13 @@ public class TerminalActivity extends AppCompatActivity
         File src = resolvePath(parts[0]);
         File dst = resolvePath(parts[1]);
         if (!src.exists()) {
-            appendOutput("mv: source not found: " + parts[0] + "\n\n");
+            appendOutput("mv: " + parts[0] + ": No such file\n\n");
             return;
         }
         if (src.renameTo(dst)) {
             appendOutput("Moved: " + src.getName() + " -> " + dst.getAbsolutePath() + "\n\n");
         } else {
-            appendOutput("mv: failed to move\n\n");
+            appendOutput("mv: failed\n\n");
         }
     }
 
@@ -477,18 +491,24 @@ public class TerminalActivity extends AppCompatActivity
         java.io.OutputStream out = new java.io.FileOutputStream(dst);
         byte[] buf = new byte[8192];
         int len;
-        while ((len = in.read(buf)) > 0) {
-            out.write(buf, 0, len);
-        }
+        while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
         in.close();
         out.close();
+    }
+
+    private void deleteRecursive(File f) {
+        if (f.isDirectory()) {
+            File[] c = f.listFiles();
+            if (c != null) for (File child : c) deleteRecursive(child);
+        }
+        f.delete();
     }
 
     // ──────────────────────────────────────────────────────────────
     // Shell passthrough
     // ──────────────────────────────────────────────────────────────
 
-    private void runShellCommand(String cmd) {
+    private void runShellPassthrough(String cmd) {
         try {
             ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", cmd);
             pb.directory(currentDir);
@@ -501,11 +521,8 @@ public class TerminalActivity extends AppCompatActivity
             while ((line = reader.readLine()) != null) {
                 appendOutput(line + "\n");
             }
-
             int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                appendOutput("Exit code: " + exitCode + "\n");
-            }
+            if (exitCode != 0) appendOutput("Exit code: " + exitCode + "\n");
             appendOutput("\n");
         } catch (Exception e) {
             appendOutput("sh: " + e.getMessage() + "\n\n");
@@ -519,32 +536,48 @@ public class TerminalActivity extends AppCompatActivity
     private void showHelp() {
         appendOutput(
             "═══════════════════════════════════════════\n" +
-            "  BantuDroid Terminal — Available Commands\n" +
+            "  BantuDroid Terminal v2.2.2\n" +
             "═══════════════════════════════════════════\n\n" +
-            "  Bantu Engine:\n" +
-            "    bantu run <file.b>       Run a Bantu file\n" +
-            "    bantu <args>             Run Bantu with arguments\n" +
-            "    start-service <file.b>   Start server in background\n" +
-            "    stop-service             Stop background server\n\n" +
-            "  File System:\n" +
-            "    pwd                      Print working directory\n" +
-            "    cd [dir]                 Change directory\n" +
-            "    ls [dir]                 List files and directories\n" +
-            "    cat <file>               Display file contents\n" +
-            "    mkdir <dir>              Create directory\n" +
-            "    rmdir <dir>              Remove empty directory\n" +
-            "    rm <file>                Delete file\n" +
-            "    touch <file>             Create empty file\n" +
-            "    cp <src> <dst>           Copy file\n" +
-            "    mv <src> <dst>           Move/rename file\n" +
-            "    echo <text>              Print text\n\n" +
-            "  Other:\n" +
-            "    clear / cls              Clear terminal\n" +
-            "    help                     Show this help\n" +
-            "    whoami                   Show current user\n" +
-            "    hostname                 Show device name\n\n" +
-            "  Shell:\n" +
-            "    Any other command runs via /system/bin/sh\n\n"
+            "  Bantu Engine Commands:\n" +
+            "    bantu --help               Show engine help\n" +
+            "    bantu --version            Show engine version\n" +
+            "    bantu init <name>          Create new project\n" +
+            "    bantu init --web <name>    Create web project\n" +
+            "    bantu new <name>           Create new file\n" +
+            "    bantu run                  Run project in CWD\n" +
+            "    bantu run <file.b>         Run a .b file\n" +
+            "    bantu build                Build project\n" +
+            "    bantu build <file.b>       Build a file\n" +
+            "    bantu relay [port]         Start relay server\n" +
+            "    bantu install              Install packages\n" +
+            "    bantu add <pkg>            Add a package\n" +
+            "    bantu add <pkg>@<ver>      Add package version\n" +
+            "    bantu remove <pkg>         Remove a package\n" +
+            "    bantu update               Update all packages\n" +
+            "    bantu update <pkg>         Update a package\n" +
+            "    bantu list                 List packages\n" +
+            "    bantu search               Search packages\n" +
+            "    bantu publish              Publish project\n" +
+            "    bantu publish --as         Publish as\n\n" +
+            "  Shell Commands:\n" +
+            "    pwd                        Print working directory\n" +
+            "    cd [dir]                   Change directory\n" +
+            "    ls [dir]                   List directory\n" +
+            "    cat <file>                 View file contents\n" +
+            "    mkdir <dir>                Create directory\n" +
+            "    rmdir <dir>                Remove empty directory\n" +
+            "    rm [-rf] <path>            Delete file/directory\n" +
+            "    touch <file>               Create empty file\n" +
+            "    cp <src> <dst>             Copy file\n" +
+            "    mv <src> <dst>             Move/rename\n" +
+            "    echo <text>                Print text\n" +
+            "    clear / cls                Clear terminal\n" +
+            "    whoami                     Show user\n" +
+            "    hostname                   Show device name\n\n" +
+            "  Server:\n" +
+            "    start-service <file.b>     Start in background\n" +
+            "    stop-service               Stop background server\n\n" +
+            "  Any other command runs via /system/bin/sh\n\n"
         );
     }
 
@@ -553,13 +586,11 @@ public class TerminalActivity extends AppCompatActivity
             appendOutput("Error: Engine not installed\n");
             return;
         }
-
         Intent intent = new Intent(this, ServerService.class);
         intent.setAction(ServerService.ACTION_START);
         intent.putExtra(ServerService.EXTRA_FILE, file);
         ContextCompat.startForegroundService(this, intent);
-        appendOutput("Background server started: " + file + "\n");
-        appendOutput("It will keep running even when you close the app.\n\n");
+        appendOutput("Background server started: " + file + "\n\n");
     }
 
     private void stopServerService() {
@@ -578,7 +609,7 @@ public class TerminalActivity extends AppCompatActivity
     }
 
     // ──────────────────────────────────────────────────────────────
-    // OutputListener callbacks (called on background thread!)
+    // OutputListener callbacks
     // ──────────────────────────────────────────────────────────────
 
     @Override
@@ -597,7 +628,20 @@ public class TerminalActivity extends AppCompatActivity
             appendOutput("\nProcess exited with code " + exitCode + "\n\n");
             setRunning(false);
             currentProcess = null;
+
+            // After bantu init completes, scan for new projects
+            // and notify the file manager to refresh
+            notifyDataChanged();
         });
+    }
+
+    /**
+     * Called when data may have changed (after bantu init, rm, etc.)
+     * Broadcasts an intent so other activities can refresh.
+     */
+    private void notifyDataChanged() {
+        Intent intent = new Intent("com.bantu.droid.DATA_CHANGED");
+        sendBroadcast(intent);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -606,12 +650,9 @@ public class TerminalActivity extends AppCompatActivity
 
     private void appendOutput(String text) {
         outputBuffer.append(text);
-
-        // Keep buffer from growing too large (max ~100KB)
         if (outputBuffer.length() > 100_000) {
             outputBuffer.delete(0, outputBuffer.length() - 80_000);
         }
-
         terminalOutput.setText(outputBuffer.toString());
         scrollview.post(() -> scrollview.fullScroll(View.FOCUS_DOWN));
     }
@@ -623,7 +664,7 @@ public class TerminalActivity extends AppCompatActivity
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Notification permission (Android 13+)
+    // Notification permission
     // ──────────────────────────────────────────────────────────────
 
     private void requestNotificationPermission() {
@@ -638,54 +679,38 @@ public class TerminalActivity extends AppCompatActivity
         }
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Lifecycle
-    // ──────────────────────────────────────────────────────────────
+    @Override
+    protected void onDestroy() { super.onDestroy(); }
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-    }
+    protected void onPause() { super.onPause(); }
 
     // ──────────────────────────────────────────────────────────────
     // Command history
     // ──────────────────────────────────────────────────────────────
 
     private static class CommandHistory {
-        private static final int MAX_HISTORY = 50;
-        private final String[] history = new String[MAX_HISTORY];
-        private int size = 0;
-        private int pointer = 0;
+        private static final int MAX = 50;
+        private final String[] history = new String[MAX];
+        private int size = 0, pointer = 0;
 
         void add(String cmd) {
             if (size > 0 && cmd.equals(history[size - 1])) return;
-            if (size < MAX_HISTORY) {
-                history[size++] = cmd;
-            } else {
-                System.arraycopy(history, 1, history, 0, MAX_HISTORY - 1);
-                history[MAX_HISTORY - 1] = cmd;
+            if (size < MAX) history[size++] = cmd;
+            else {
+                System.arraycopy(history, 1, history, 0, MAX - 1);
+                history[MAX - 1] = cmd;
             }
             pointer = size;
         }
 
         String previous() {
-            if (pointer > 0) {
-                pointer--;
-                return history[pointer];
-            }
+            if (pointer > 0) return history[--pointer];
             return null;
         }
 
         String next() {
-            if (pointer < size - 1) {
-                pointer++;
-                return history[pointer];
-            }
+            if (pointer < size - 1) return history[++pointer];
             pointer = size;
             return null;
         }
