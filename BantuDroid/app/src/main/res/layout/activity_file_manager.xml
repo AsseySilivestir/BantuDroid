@@ -19,11 +19,21 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/files_title"
+            android:text="Files"
             android:textColor="@color/bantu_green"
             android:textSize="20sp"
             android:fontFamily="monospace"
             android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_add_folder"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="+📁"
+            android:textSize="14sp"
+            android:backgroundTint="@color/bg_input"
+            android:textColor="@color/bantu_green"
+            android:layout_marginEnd="8dp" />
 
         <Button
             android:id="@+id/btn_add_file"
@@ -34,6 +44,22 @@
             android:backgroundTint="@color/bantu_green"
             android:textColor="@color/black" />
     </LinearLayout>
+
+    <!-- Current Path -->
+    <TextView
+        android:id="@+id/tv_current_path"
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:text="~"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:background="@color/bg_input"
+        android:ellipsize="start"
+        android:singleLine="true" />
 
     <!-- Empty state -->
     <LinearLayout
@@ -48,7 +74,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/files_empty"
+            android:text="Empty folder. Tap + to create files."
             android:textColor="@color/text_hint"
             android:textSize="16sp"
             android:gravity="center" />

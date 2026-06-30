@@ -5,6 +5,20 @@
     android:orientation="vertical"
     android:background="@color/bg_dark">
 
+    <!-- Server Status Bar -->
+    <TextView
+        android:id="@+id/tv_server_status"
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:text="Server: localhost:8080"
+        android:textColor="@color/bantu_green"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:background="@color/bg_surface" />
+
     <!-- URL Bar -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -13,61 +27,60 @@
         android:gravity="center_vertical"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
-        android:background="@color/bg_surface">
+        android:background="@color/bg_input">
 
         <ImageButton
             android:id="@+id/btn_back"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:src="@android:drawable/ic_menu_revert"
-            android:background="@color/transparent"
-            android:contentDescription="Back"
-            android:padding="4dp" />
+            android:src="@android:drawable/ic_media_previous"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back" />
 
         <EditText
             android:id="@+id/url_bar"
             android:layout_width="0dp"
             android:layout_height="36dp"
             android:layout_weight="1"
-            android:background="@color/bg_input"
+            android:background="@color/bg_dark"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
-            android:hint="@string/dashboard_url_hint"
             android:textSize="13sp"
             android:fontFamily="monospace"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
             android:singleLine="true"
             android:inputType="textUri"
-            android:imeOptions="actionGo" />
+            android:imeOptions="actionGo"
+            android:hint="http://localhost:8080"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp" />
 
         <ImageButton
             android:id="@+id/btn_go"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:src="@android:drawable/ic_media_play"
-            android:background="@color/transparent"
-            android:contentDescription="Go"
-            android:padding="4dp" />
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Go" />
 
         <ImageButton
             android:id="@+id/btn_refresh"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:src="@android:drawable/ic_menu_rotate"
-            android:background="@color/transparent"
-            android:contentDescription="Refresh"
-            android:padding="4dp" />
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Refresh" />
     </LinearLayout>
 
-    <!-- Loading indicator -->
+    <!-- Progress Bar -->
     <ProgressBar
         android:id="@+id/progress_bar"
+        style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="4dp"
+        android:layout_height="3dp"
         android:max="100"
-        style="@android:style/Widget.ProgressBar.Horizontal"
-        android:progressTint="@color/bantu_green"
+        android:progressDrawable="@android:drawable/progress_horizontal"
         android:visibility="gone" />
 
     <!-- WebView -->
