@@ -1,21 +1,3 @@
 # ninja log v5
-0	578	1782790410263413785	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-578	645	1782790410335414226	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
-0	6	0	clean	a889fc028a8d1070
-0	6	0	clean	a889fc028a8d1070
-0	6	0	clean	a889fc028a8d1070
-4	570	1782792855330531061	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-570	646	1782792855408531544	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
-0	6	0	clean	a889fc028a8d1070
-3	578	1782793003546392189	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-578	644	1782793003616392623	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
-0	7	0	clean	a889fc028a8d1070
-3	606	1782793130644305213	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-606	675	1782793130717305781	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
-0	6	0	clean	a889fc028a8d1070
-0	6	0	clean	a889fc028a8d1070
-3	561	1782797756790343898	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-562	627	1782797756860344334	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
-0	5	0	clean	a889fc028a8d1070
-3	577	1782797880788115132	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
-577	644	1782797880860115580	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1
+0	591	1782802680476117371	CMakeFiles/banturun.dir/bantu_jni.cpp.o	9b25e54091a01eaa
+592	660	1782802680549117826	/home/z/my-project/BantuDroid/app/build/intermediates/cxx/Debug/2g3t1x1z/obj/armeabi-v7a/libbanturun.so	600fa07a78a6bb1

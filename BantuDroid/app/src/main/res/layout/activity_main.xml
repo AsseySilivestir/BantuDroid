@@ -164,6 +164,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
             app:cardBackgroundColor="@color/bg_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="2dp">
@@ -174,8 +175,8 @@
                 android:layout_height="72dp"
                 android:text="Hosting &amp; Tunnel"
                 android:textSize="18sp"
-                android:backgroundTint="@color/bantu_green"
-                android:textColor="@color/black"
+                android:backgroundTint="@color/bg_card"
+                android:textColor="#64B5F6"
                 android:drawableStart="@android:drawable/ic_menu_share"
                 android:drawablePadding="16dp"
                 android:gravity="start|center_vertical"
@@ -185,7 +186,6 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             app:cardBackgroundColor="@color/bg_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="2dp">

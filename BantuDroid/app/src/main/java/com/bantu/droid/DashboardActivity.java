@@ -1,7 +1,6 @@
 package com.bantu.droid;
 
 import android.annotation.SuppressLint;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebChromeClient;
@@ -11,14 +10,13 @@ import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
-import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.preference.PreferenceManager;
 
 /**
  * WebView dashboard for viewing the Bantu server's admin panel.
- * Shows server status, URL, and tunnel information.
+ * Loads localhost:8080 (or user-configured URL) to show the
+ * DDNS status, visitor logs, and server controls.
  */
 public class DashboardActivity extends AppCompatActivity {
 
@@ -26,8 +24,10 @@ public class DashboardActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private EditText urlBar;
     private ImageButton btnGo, btnRefresh, btnBack;
-    private TextView tvServerStatus;
 
+    private static final String DEFAULT_URL = "http://localhost:8080";
+
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -39,15 +39,6 @@ public class DashboardActivity extends AppCompatActivity {
         btnGo = findViewById(R.id.btn_go);
         btnRefresh = findViewById(R.id.btn_refresh);
         btnBack = findViewById(R.id.btn_back);
-        tvServerStatus = findViewById(R.id.tv_server_status);
-
-        // Get port from settings
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        int port = prefs.getInt("default_port", 8080);
-        String defaultUrl = "http://localhost:" + port;
-
-        // Show server status
-        tvServerStatus.setText("Server: " + defaultUrl);
 
         // Configure WebView
         WebSettings settings = webView.getSettings();
@@ -60,8 +51,8 @@ public class DashboardActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+        // WebView client for in-app navigation
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
@@ -81,10 +72,10 @@ public class DashboardActivity extends AppCompatActivity {
                                         android.webkit.WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 progressBar.setVisibility(View.GONE);
-                tvServerStatus.setText("Error loading page. Is the server running?");
             }
         });
 
+        // Progress indicator
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
@@ -96,6 +87,7 @@ public class DashboardActivity extends AppCompatActivity {
             }
         });
 
+        // URL bar actions
         btnGo.setOnClickListener(v -> loadUrl());
         urlBar.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
@@ -113,8 +105,8 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         // Load default URL
-        urlBar.setText(defaultUrl);
-        webView.loadUrl(defaultUrl);
+        urlBar.setText(DEFAULT_URL);
+        webView.loadUrl(DEFAULT_URL);
     }
 
     private void loadUrl() {
@@ -123,7 +115,6 @@ public class DashboardActivity extends AppCompatActivity {
             url = "http://" + url;
             urlBar.setText(url);
         }
-        tvServerStatus.setText("Loading: " + url);
         webView.loadUrl(url);
     }
 

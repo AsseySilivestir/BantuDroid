@@ -1,512 +1,403 @@
 package com.bantu.droid;
 
-import android.util.Log;
-
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.URL;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Lightweight UPnP IGD (Internet Gateway Device) port mapper.
+ * Lightweight UPnP IGD client for automatic port forwarding.
  *
- * Implements SSDP discovery + SOAP AddPortMapping / DeletePortMapping
- * without any external library. Works on Android's standard Java networking.
+ * Discovers the router's IGD (Internet Gateway Device) via SSDP,
+ * then uses SOAP AddPortMapping/DeletePortMapping to forward ports.
+ * Also detects CGNAT (RFC 6598 range 100.64.0.0/10).
  *
- * Flow:
- * 1. SSDP M-SEARCH to discover IGD devices on the LAN
- * 2. Fetch IGD description XML to find control URL
- * 3. AddPortMapping via SOAP to forward external:port → internal:port
- * 4. DeletePortMapping via SOAP to remove the mapping on stop
- *
- * This allows direct public IP access to the local server by
- * configuring the router's NAT port forwarding automatically.
+ * No external dependencies — uses only java.net.
  */
 public class UpnpPortMapper {
 
-    private static final String TAG = "UpnpPortMapper";
+    public interface Callback {
+        void onMessage(String msg);
+        void onError(String err);
+    }
 
-    // SSDP constants
-    private static final String SSDP_MULTICAST = "239.255.255.250";
+    private static final String SSDP_ADDR = "239.255.255.250";
     private static final int SSDP_PORT = 1900;
-    private static final int SSDP_TIMEOUT_MS = 5000;
+    private static final String SSDP_SEARCH =
+        "M-SEARCH * HTTP/1.1\r\n" +
+        "HOST: 239.255.255.250:1900\r\n" +
+        "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n" +
+        "MAN: \"ssdp:discover\"\r\n" +
+        "MX: 3\r\n" +
+        "\r\n";
 
-    // IGD device info
-    private String igdDescriptionUrl;
-    private String igdControlUrl;
-    private String igdServiceType;
-    private String externalIpAddress;
-
-    // Current mapping
-    private int mappedExternalPort = -1;
-    private int mappedInternalPort = -1;
-    private String mappedProtocol = "TCP";
-    private String mappedInternalClient;
-    private boolean mappingActive = false;
-
-    public interface UpnpCallback {
-        void onSuccess(String externalIp, int externalPort, String publicUrl);
-        void onFailure(String error);
-        void onProgress(String message);
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // Public API
-    // ──────────────────────────────────────────────────────────────
+    private String controlUrl;
+    private String serviceType;
+    private String externalIp;
+    private String internalIp;
+    private boolean mapped = false;
+    private int mappedExternalPort;
 
     /**
-     * Discover the IGD and create a port mapping.
-     * Must be called on a background thread.
+     * Discover UPnP IGD on the local network.
+     * Returns true if a router with IGD was found.
      */
-    public void addPortMapping(int internalPort, int externalPort, UpnpCallback callback) {
+    public boolean discover(Callback cb) {
         try {
-            callback.onProgress("Discovering UPnP gateway...");
+            cb.onMessage("Searching for UPnP IGD...");
 
-            // Step 1: Get local IP
-            String localIp = getLocalIpAddress();
-            if (localIp == null) {
-                callback.onFailure("No local IP address found");
-                return;
-            }
-            callback.onProgress("Local IP: " + localIp);
-            mappedInternalClient = localIp;
-
-            // Step 2: SSDP discovery
-            String location = discoverIgd(localIp);
-            if (location == null) {
-                callback.onFailure("No UPnP gateway found on your network. " +
-                    "Your router may not support UPnP, or it may be disabled. " +
-                    "Enable UPnP in your router settings or try a different tunnel method.");
-                return;
-            }
-            igdDescriptionUrl = location;
-            callback.onProgress("Gateway found: " + location);
-
-            // Step 3: Parse IGD description
-            if (!parseIgdDescription(location)) {
-                callback.onFailure("Failed to parse gateway description. " +
-                    "The router may use a non-standard UPnP implementation.");
-                return;
-            }
-            callback.onProgress("Control URL: " + igdControlUrl);
-
-            // Step 4: Get external IP
-            externalIpAddress = getExternalIpFromIgd();
-            if (externalIpAddress == null || externalIpAddress.isEmpty()) {
-                callback.onProgress("Could not get external IP from gateway, using web API...");
-                externalIpAddress = fetchPublicIpFromWeb();
-            }
-            if (externalIpAddress == null) {
-                callback.onFailure("Could not determine your public IP address");
-                return;
-            }
-            callback.onProgress("External IP: " + externalIpAddress);
-
-            // Step 5: Add port mapping
-            if (!addPortMappingSoap(internalPort, externalPort, localIp, "TCP")) {
-                callback.onFailure("Port mapping failed. The router may reject UPnP mappings. " +
-                    "Try a different external port or check router settings.");
-                return;
-            }
-
-            mappedExternalPort = externalPort;
-            mappedInternalPort = internalPort;
-            mappingActive = true;
-
-            String publicUrl = "http://" + externalIpAddress + ":" + externalPort;
-            callback.onSuccess(externalIpAddress, externalPort, publicUrl);
-
-        } catch (Exception e) {
-            Log.e(TAG, "UPnP port mapping failed", e);
-            callback.onFailure("UPnP error: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Remove the current port mapping.
-     */
-    public boolean removePortMapping() {
-        if (!mappingActive || igdControlUrl == null || mappedExternalPort < 0) {
-            return false;
-        }
-        try {
-            boolean result = deletePortMappingSoap(mappedExternalPort, mappedProtocol);
-            if (result) {
-                mappingActive = false;
-                mappedExternalPort = -1;
-                mappedInternalPort = -1;
-                Log.i(TAG, "UPnP port mapping removed");
-            }
-            return result;
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to remove port mapping", e);
-            return false;
-        }
-    }
-
-    public boolean isMappingActive() {
-        return mappingActive;
-    }
-
-    public String getExternalIpAddress() {
-        return externalIpAddress;
-    }
-
-    public int getMappedExternalPort() {
-        return mappedExternalPort;
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // SSDP Discovery
-    // ──────────────────────────────────────────────────────────────
-
-    private String discoverIgd(String localIp) {
-        DatagramSocket socket = null;
-        try {
-            socket = new DatagramSocket();
-            socket.setSoTimeout(SSDP_TIMEOUT_MS);
-
-            // Bind to the interface with our local IP for multi-homed devices
-            InetAddress localAddr = InetAddress.getByName(localIp);
-            socket.bind(null); // Use ephemeral port
-
-            // SSDP M-SEARCH for Internet Gateway Device
-            String[] searchTargets = {
-                "urn:schemas-upnp-org:device:InternetGatewayDevice:1",
-                "urn:schemas-upnp-org:device:InternetGatewayDevice:2",
-                "upnp:rootdevice"
-            };
-
-            for (String st : searchTargets) {
-                String search = "M-SEARCH * HTTP/1.1\r\n" +
-                    "HOST: " + SSDP_MULTICAST + ":" + SSDP_PORT + "\r\n" +
-                    "ST: " + st + "\r\n" +
-                    "MAN: \"ssdp:discover\"\r\n" +
-                    "MX: 3\r\n" +
-                    "\r\n";
-
-                byte[] data = search.getBytes();
-                DatagramPacket packet = new DatagramPacket(
-                    data, data.length,
-                    InetAddress.getByName(SSDP_MULTICAST), SSDP_PORT
-                );
-
-                socket.send(packet);
-
-                // Wait for response
-                long deadline = System.currentTimeMillis() + SSDP_TIMEOUT_MS;
-                while (System.currentTimeMillis() < deadline) {
-                    try {
-                        byte[] buf = new byte[2048];
-                        DatagramPacket response = new DatagramPacket(buf, buf.length);
-                        socket.receive(response);
-                        String respStr = new String(response.getData(), 0, response.getLength());
-
-                        // Look for LOCATION header
-                        String location = extractHeader(respStr, "LOCATION");
-                        if (location != null && !location.isEmpty()) {
-                            Log.i(TAG, "SSDP found IGD: " + location + " (ST=" + st + ")");
-                            return location;
-                        }
-                    } catch (java.net.SocketTimeoutException e) {
-                        // No more responses for this ST, try next
-                        break;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "SSDP discovery error", e);
-        } finally {
-            if (socket != null) {
-                socket.close();
-            }
-        }
-        return null;
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // IGD Description Parsing
-    // ──────────────────────────────────────────────────────────────
-
-    private boolean parseIgdDescription(String descriptionUrl) {
-        try {
-            String xml = httpGet(descriptionUrl);
-            if (xml == null) return false;
-
-            // Find WANIPConnection or WANPPPConnection service
-            String[] serviceTypes = {
-                "urn:schemas-upnp-org:service:WANIPConnection:1",
-                "urn:schemas-upnp-org:service:WANIPConnection:2",
-                "urn:schemas-upnp-org:service:WANPPPConnection:1"
-            };
-
-            for (String serviceType : serviceTypes) {
-                int serviceIdx = xml.indexOf(serviceType);
-                if (serviceIdx < 0) continue;
-
-                // Find the <service> block containing this service type
-                int serviceStart = xml.lastIndexOf("<service>", serviceIdx);
-                int serviceEnd = xml.indexOf("</service>", serviceIdx);
-                if (serviceStart < 0 || serviceEnd < 0) continue;
-
-                String serviceBlock = xml.substring(serviceStart, serviceEnd);
-
-                // Extract controlURL
-                String controlUrl = extractXmlTag(serviceBlock, "controlURL");
-                if (controlUrl != null && !controlUrl.isEmpty()) {
-                    igdServiceType = serviceType;
-                    igdControlUrl = resolveUrl(descriptionUrl, controlUrl);
-                    Log.i(TAG, "IGD service: " + serviceType + " controlURL: " + igdControlUrl);
-                    return true;
-                }
-            }
-
-            Log.w(TAG, "No suitable WAN connection service found in IGD description");
-            return false;
-
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to parse IGD description", e);
-            return false;
-        }
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // SOAP Actions
-    // ──────────────────────────────────────────────────────────────
-
-    private boolean addPortMappingSoap(int internalPort, int externalPort,
-                                        String internalClient, String protocol) {
-        String soapBody = "<?xml version=\"1.0\"?>\n" +
-            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
-            "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
-            "  <s:Body>\n" +
-            "    <u:AddPortMapping xmlns:u=\"" + igdServiceType + "\">\n" +
-            "      <NewRemoteHost></NewRemoteHost>\n" +
-            "      <NewExternalPort>" + externalPort + "</NewExternalPort>\n" +
-            "      <NewProtocol>" + protocol + "</NewProtocol>\n" +
-            "      <NewInternalPort>" + internalPort + "</NewInternalPort>\n" +
-            "      <NewInternalClient>" + internalClient + "</NewInternalClient>\n" +
-            "      <NewEnabled>1</NewEnabled>\n" +
-            "      <NewPortMappingDescription>BantuDroid Hosting</NewPortMappingDescription>\n" +
-            "      <NewLeaseDuration>86400</NewLeaseDuration>\n" +
-            "    </u:AddPortMapping>\n" +
-            "  </s:Body>\n" +
-            "</s:Envelope>";
-
-        String response = soapRequest("AddPortMapping", soapBody);
-        if (response != null) {
-            // Check for error in response
-            if (response.contains("errorCode") || response.contains("errorCode")) {
-                String errorCode = extractXmlTag(response, "errorCode");
-                String errorDesc = extractXmlTag(response, "errorDescription");
-                Log.e(TAG, "AddPortMapping error: " + errorCode + " - " + errorDesc);
+            // Get local IP
+            internalIp = getLocalIp();
+            if (internalIp == null) {
+                cb.onError("No local IP found");
                 return false;
             }
-            Log.i(TAG, "Port mapping added: " + externalPort + " → " + internalClient + ":" + internalPort);
+            cb.onMessage("Local IP: " + internalIp);
+
+            // Send SSDP M-SEARCH
+            DatagramSocket socket = new DatagramSocket();
+            socket.setSoTimeout(5000);
+
+            byte[] search = SSDP_SEARCH.getBytes();
+            DatagramPacket packet = new DatagramPacket(
+                search, search.length,
+                InetAddress.getByName(SSDP_ADDR), SSDP_PORT);
+
+            socket.send(packet);
+
+            // Listen for responses
+            byte[] buf = new byte[4096];
+            DatagramPacket response = new DatagramPacket(buf, buf.length);
+
+            String location = null;
+            long deadline = System.currentTimeMillis() + 6000;
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    socket.setSoTimeout((int)(deadline - System.currentTimeMillis()));
+                    socket.receive(response);
+                    String resp = new String(response.getData(), 0, response.getLength());
+                    if (resp.contains("InternetGatewayDevice") || resp.contains("WANIPConnection") || resp.contains("WANPPPConnection")) {
+                        // Extract LOCATION header
+                        for (String line : resp.split("\r\n")) {
+                            if (line.toLowerCase().startsWith("location:")) {
+                                location = line.substring(9).trim();
+                                break;
+                            }
+                        }
+                        if (location != null) break;
+                    }
+                } catch (java.net.SocketTimeoutException e) {
+                    break;
+                }
+            }
+            socket.close();
+
+            if (location == null) {
+                cb.onError("No UPnP IGD found on network");
+                return false;
+            }
+
+            cb.onMessage("Found IGD at: " + location);
+
+            // Fetch description XML
+            String descXml = httpGet(location);
+            if (descXml == null) {
+                cb.onError("Failed to fetch IGD description");
+                return false;
+            }
+
+            // Parse control URL and service type
+            parseDescription(descXml, location);
+
+            if (controlUrl == null) {
+                cb.onError("No WANIPConnection service found in IGD");
+                return false;
+            }
+
+            cb.onMessage("Control URL: " + controlUrl);
+
+            // Get external IP
+            externalIp = getExternalIpFromUpnp();
+            if (externalIp != null) {
+                cb.onMessage("External IP (UPnP): " + externalIp);
+
+                // Check for CGNAT
+                if (isCgnat(externalIp)) {
+                    cb.onMessage("WARNING: CGNAT detected! Public IP is in RFC 6598 range.");
+                    cb.onMessage("UPnP may not work. Use SSH Tunnel or Cloudflare instead.");
+                }
+            }
+
             return true;
-        }
-        return false;
-    }
-
-    private boolean deletePortMappingSoap(int externalPort, String protocol) {
-        String soapBody = "<?xml version=\"1.0\"?>\n" +
-            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
-            "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
-            "  <s:Body>\n" +
-            "    <u:DeletePortMapping xmlns:u=\"" + igdServiceType + "\">\n" +
-            "      <NewRemoteHost></NewRemoteHost>\n" +
-            "      <NewExternalPort>" + externalPort + "</NewExternalPort>\n" +
-            "      <NewProtocol>" + protocol + "</NewProtocol>\n" +
-            "    </u:DeletePortMapping>\n" +
-            "  </s:Body>\n" +
-            "</s:Envelope>";
-
-        String response = soapRequest("DeletePortMapping", soapBody);
-        return response != null && !response.contains("errorCode");
-    }
-
-    private String getExternalIpFromIgd() {
-        String soapBody = "<?xml version=\"1.0\"?>\n" +
-            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
-            "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
-            "  <s:Body>\n" +
-            "    <u:GetExternalIPAddress xmlns:u=\"" + igdServiceType + "\">\n" +
-            "    </u:GetExternalIPAddress>\n" +
-            "  </s:Body>\n" +
-            "</s:Envelope>";
-
-        String response = soapRequest("GetExternalIPAddress", soapBody);
-        if (response != null) {
-            return extractXmlTag(response, "NewExternalIPAddress");
-        }
-        return null;
-    }
-
-    private String soapRequest(String action, String soapBody) {
-        HttpURLConnection conn = null;
-        try {
-            URL url = new URL(igdControlUrl);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
-            conn.setDoOutput(true);
-            conn.setRequestProperty("Content-Type", "text/xml; charset=utf-8");
-            conn.setRequestProperty("SOAPAction", "\"" + igdServiceType + "#" + action + "\"");
-            conn.setRequestProperty("Connection", "close");
-
-            byte[] body = soapBody.getBytes("UTF-8");
-            conn.setRequestProperty("Content-Length", String.valueOf(body.length));
-            conn.getOutputStream().write(body);
-            conn.getOutputStream().flush();
-
-            int code = conn.getResponseCode();
-            InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-            String response = readStream(is);
-
-            Log.d(TAG, "SOAP " + action + " response (" + code + "): " +
-                (response != null ? response.substring(0, Math.min(200, response.length())) : "null"));
-            return response;
 
         } catch (Exception e) {
-            Log.e(TAG, "SOAP " + action + " failed", e);
-            return null;
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
+            cb.onError("Discovery error: " + e.getMessage());
+            return false;
         }
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Public IP Detection (Web API fallback)
-    // ──────────────────────────────────────────────────────────────
+    /**
+     * Add a port mapping via UPnP.
+     */
+    public boolean addPortMapping(int internalPort, int externalPort,
+                                   String protocol, String description, Callback cb) {
+        if (controlUrl == null) {
+            cb.onError("Not discovered. Run discover() first.");
+            return false;
+        }
+
+        if (externalIp == null) {
+            externalIp = getExternalIpFromUpnp();
+        }
+
+        try {
+            String soapBody =
+                "<?xml version=\"1.0\"?>\n" +
+                "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
+                "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
+                "  <s:Body>\n" +
+                "    <u:AddPortMapping xmlns:u=\"" + serviceType + "\">\n" +
+                "      <NewRemoteHost></NewRemoteHost>\n" +
+                "      <NewExternalPort>" + externalPort + "</NewExternalPort>\n" +
+                "      <NewProtocol>" + protocol + "</NewProtocol>\n" +
+                "      <NewInternalPort>" + internalPort + "</NewInternalPort>\n" +
+                "      <NewInternalClient>" + internalIp + "</NewInternalClient>\n" +
+                "      <NewEnabled>1</NewEnabled>\n" +
+                "      <NewPortMappingDescription>" + description + "</NewPortMappingDescription>\n" +
+                "      <NewLeaseDuration>0</NewLeaseDuration>\n" +
+                "    </u:AddPortMapping>\n" +
+                "  </s:Body>\n" +
+                "</s:Envelope>";
+
+            String result = soapAction("AddPortMapping", soapBody);
+            if (result != null && !result.contains("errorCode")) {
+                mapped = true;
+                mappedExternalPort = externalPort;
+                cb.onMessage("Port forwarded: " + externalIp + ":" + externalPort +
+                    " -> " + internalIp + ":" + internalPort + " (" + protocol + ")");
+                return true;
+            } else {
+                cb.onError("AddPortMapping failed. Router may not support UPnP or CGNAT is active.");
+                return false;
+            }
+        } catch (Exception e) {
+            cb.onError("AddPortMapping error: " + e.getMessage());
+            return false;
+        }
+    }
 
     /**
-     * Fetch public IP from external web APIs.
-     * Must be called on a background thread.
+     * Remove a port mapping via UPnP.
      */
-    public static String fetchPublicIpFromWeb() {
+    public boolean deletePortMapping(int externalPort, String protocol, Callback cb) {
+        if (controlUrl == null) {
+            cb.onError("Not discovered");
+            return false;
+        }
+
+        try {
+            String soapBody =
+                "<?xml version=\"1.0\"?>\n" +
+                "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
+                "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
+                "  <s:Body>\n" +
+                "    <u:DeletePortMapping xmlns:u=\"" + serviceType + "\">\n" +
+                "      <NewRemoteHost></NewRemoteHost>\n" +
+                "      <NewExternalPort>" + externalPort + "</NewExternalPort>\n" +
+                "      <NewProtocol>" + protocol + "</NewProtocol>\n" +
+                "    </u:DeletePortMapping>\n" +
+                "  </s:Body>\n" +
+                "</s:Envelope>";
+
+            String result = soapAction("DeletePortMapping", soapBody);
+            if (result != null) {
+                mapped = false;
+                cb.onMessage("Port mapping removed: " + externalPort + " (" + protocol + ")");
+                return true;
+            } else {
+                cb.onError("DeletePortMapping failed");
+                return false;
+            }
+        } catch (Exception e) {
+            cb.onError("DeletePortMapping error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Detect public IP via web API (fallback if UPnP doesn't work).
+     */
+    public static String detectPublicIp() {
         String[] apis = {
             "https://api.ipify.org",
             "https://ifconfig.me/ip",
             "https://icanhazip.com",
-            "https://checkip.amazonaws.com",
-            "https://api64.ipify.org"
+            "https://checkip.amazonaws.com"
         };
-
         for (String api : apis) {
-            HttpURLConnection conn = null;
             try {
-                URL url = new URL(api);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                conn.setRequestProperty("User-Agent", "BantuDroid/2.5");
-
-                int code = conn.getResponseCode();
-                if (code == 200) {
-                    String ip = readStream(conn.getInputStream());
-                    if (ip != null) {
-                        ip = ip.trim();
-                        // Validate it looks like an IP
-                        if (ip.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}") ||
-                            ip.matches("[0-9a-fA-F:]+")) {
-                            Log.i(TAG, "Public IP from " + api + ": " + ip);
-                            return ip;
-                        }
+                String ip = httpGet(api);
+                if (ip != null) {
+                    ip = ip.trim();
+                    if (ip.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) {
+                        return ip;
                     }
                 }
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to fetch IP from " + api + ": " + e.getMessage());
-            } finally {
-                if (conn != null) conn.disconnect();
-            }
+            } catch (Exception ignored) {}
         }
         return null;
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // CGNAT Detection
-    // ──────────────────────────────────────────────────────────────
-
     /**
-     * Check if the device is likely behind Carrier-Grade NAT (CGNAT).
-     * CGNAT ranges: 100.64.0.0/10 (RFC 6598), also common:
-     * 10.x, 172.16-31.x, 192.168.x are regular NAT (not CGNAT).
-     * CGNAT is specifically the RFC 6598 shared address space.
+     * Check if an IP is in CGNAT range (RFC 6598: 100.64.0.0/10).
      */
-    public static boolean isCgnat(String localIp, String publicIp) {
-        if (localIp == null || publicIp == null) return false;
-
-        // If they're the same, no NAT at all
-        if (localIp.equals(publicIp)) return false;
-
+    public static boolean isCgnat(String ip) {
         try {
-            // Check RFC 6598 CGNAT range: 100.64.0.0/10
-            byte[] addr = InetAddress.getByName(localIp).getAddress();
-            if (addr.length == 4) {
-                int first = addr[0] & 0xFF;
-                int second = addr[1] & 0xFF;
-                // 100.64.0.0/10 = 100.01000000.0.0 to 100.01111111.255.255
-                if (first == 100 && (second & 0xC0) == 0x40) {
-                    return true; // CGNAT range
-                }
+            String[] parts = ip.split("\\.");
+            int first = Integer.parseInt(parts[0]);
+            int second = Integer.parseInt(parts[1]);
+            // 100.64.0.0/10 means first=100, second in 64-127
+            return first == 100 && second >= 64 && second <= 127;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getExternalIp() { return externalIp; }
+    public String getInternalIp() { return internalIp; }
+    public boolean isMapped() { return mapped; }
+    public int getMappedExternalPort() { return mappedExternalPort; }
+
+    // ──────────────────────────────────────────────────────────────
+    // Private helpers
+    // ──────────────────────────────────────────────────────────────
+
+    private String getExternalIpFromUpnp() {
+        try {
+            String soapBody =
+                "<?xml version=\"1.0\"?>\n" +
+                "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
+                "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n" +
+                "  <s:Body>\n" +
+                "    <u:GetExternalIPAddress xmlns:u=\"" + serviceType + "\">\n" +
+                "    </u:GetExternalIPAddress>\n" +
+                "  </s:Body>\n" +
+                "</s:Envelope>";
+
+            String result = soapAction("GetExternalIPAddress", soapBody);
+            if (result != null) {
+                Pattern p = Pattern.compile("<NewExternalIPAddress>(.*?)</NewExternalIPAddress>");
+                Matcher m = p.matcher(result);
+                if (m.find()) return m.group(1);
             }
         } catch (Exception ignored) {}
-
-        return false;
+        return null;
     }
 
-    /**
-     * Check if device is behind any NAT (local IP != public IP).
-     */
-    public static boolean isBehindNat(String localIp, String publicIp) {
-        if (localIp == null || publicIp == null) return true; // Assume NAT if unknown
-        return !localIp.equals(publicIp);
+    private String soapAction(String action, String soapBody) {
+        try {
+            URL url = new URL(controlUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("Content-Type", "text/xml; charset=utf-8");
+            conn.setRequestProperty("SOAPAction", "\"" + serviceType + "#" + action + "\"");
+
+            byte[] body = soapBody.getBytes("UTF-8");
+            conn.setRequestProperty("Content-Length", String.valueOf(body.length));
+            conn.getOutputStream().write(body);
+
+            int code = conn.getResponseCode();
+            BufferedReader reader;
+            if (code >= 400) {
+                reader = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
+            } else {
+                reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            }
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+            reader.close();
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Network Utilities
-    // ──────────────────────────────────────────────────────────────
+    private void parseDescription(String xml, String baseUrl) {
+        try {
+            URL base = new URL(baseUrl);
 
-    /**
-     * Get the device's local (LAN) IPv4 address.
-     */
-    public static String getLocalIpAddress() {
+            // Find WANIPConnection service
+            Pattern svcPattern = Pattern.compile(
+                "<service>\\s*<serviceType>(urn:schemas-upnp-org:service:WANIPConnection:[0-9]+)</serviceType>\\s*<controlURL>([^<]+)</controlURL>",
+                Pattern.DOTALL);
+            Matcher m = svcPattern.matcher(xml);
+            if (m.find()) {
+                serviceType = m.group(1);
+                String path = m.group(2);
+                controlUrl = new URL(base, path).toString();
+                return;
+            }
+
+            // Fallback: WANPPPConnection
+            svcPattern = Pattern.compile(
+                "<service>\\s*<serviceType>(urn:schemas-upnp-org:service:WANPPPConnection:[0-9]+)</serviceType>\\s*<controlURL>([^<]+)</controlURL>",
+                Pattern.DOTALL);
+            m = svcPattern.matcher(xml);
+            if (m.find()) {
+                serviceType = m.group(1);
+                String path = m.group(2);
+                controlUrl = new URL(base, path).toString();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String httpGet(String urlStr) {
+        try {
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("User-Agent", "BantuDroid/2.2.1");
+
+            BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            reader.close();
+            return sb.toString().trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String getLocalIp() {
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
-                NetworkInterface ni = interfaces.nextElement();
-                if (ni.isLoopback() || ni.isVirtual() || !ni.isUp()) continue;
-
-                Enumeration<InetAddress> addresses = ni.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    InetAddress addr = addresses.nextElement();
-                    if (addr.isLoopbackAddress()) continue;
-                    if (addr instanceof Inet4Address) {
-                        String ip = addr.getHostAddress();
-                        // Prefer wifi/LAN addresses (not mobile data CGNAT)
-                        if (ip.startsWith("192.168.") || ip.startsWith("10.") ||
-                            ip.startsWith("172.")) {
-                            return ip;
-                        }
-                    }
-                }
-            }
-
-            // Fallback: any IPv4 that's not loopback
-            interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface ni = interfaces.nextElement();
-                if (ni.isLoopback()) continue;
-                Enumeration<InetAddress> addresses = ni.getInetAddresses();
+                NetworkInterface iface = interfaces.nextElement();
+                if (iface.isLoopback() || !iface.isUp()) continue;
+                Enumeration<InetAddress> addresses = iface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     InetAddress addr = addresses.nextElement();
                     if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
@@ -514,96 +405,29 @@ public class UpnpPortMapper {
                     }
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to get local IP", e);
-        }
+        } catch (Exception ignored) {}
         return null;
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // HTTP/Text Utilities
-    // ──────────────────────────────────────────────────────────────
-
-    private static String httpGet(String urlStr) {
-        HttpURLConnection conn = null;
-        try {
-            URL url = new URL(urlStr);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
-            conn.setRequestProperty("User-Agent", "BantuDroid/2.5");
-
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                return readStream(conn.getInputStream());
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "HTTP GET failed for " + urlStr, e);
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-        return null;
-    }
-
-    private static String readStream(InputStream is) {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = is.read(buf)) != -1) {
-                baos.write(buf, 0, n);
-            }
-            return baos.toString("UTF-8");
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String extractHeader(String response, String header) {
-        String[] lines = response.split("\r\n");
-        for (String line : lines) {
-            if (line.toLowerCase().startsWith(header.toLowerCase() + ":")) {
-                return line.substring(header.length() + 1).trim();
-            }
-        }
-        return null;
-    }
-
-    private static String extractXmlTag(String xml, String tag) {
-        String startTag = "<" + tag + ">";
-        String endTag = "</" + tag + ">";
-        int s = xml.indexOf(startTag);
-        if (s < 0) return null;
-        int e = xml.indexOf(endTag, s);
-        if (e < 0) return null;
-        return xml.substring(s + startTag.length(), e).trim();
     }
 
     /**
-     * Resolve a relative URL against a base URL.
-     * E.g., base="http://192.168.1.1:80/desc.xml" + rel="/ctrl" → "http://192.168.1.1:80/ctrl"
+     * Get the default gateway IP on Android.
      */
-    private static String resolveUrl(String baseUrl, String relUrl) {
-        if (relUrl.startsWith("http://") || relUrl.startsWith("https://")) {
-            return relUrl;
-        }
+    public static String getGateway() {
         try {
-            URL base = new URL(baseUrl);
-            return new URL(base, relUrl).toString();
-        } catch (Exception e) {
-            // Manual fallback
-            String schemeHost;
-            int pathStart = baseUrl.indexOf("/", baseUrl.indexOf("//") + 2);
-            if (pathStart > 0) {
-                schemeHost = baseUrl.substring(0, pathStart);
-            } else {
-                schemeHost = baseUrl;
+            Process p = Runtime.getRuntime().exec("ip route");
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.startsWith("default") || line.contains("default via")) {
+                    String[] parts = line.split("\\s+");
+                    for (int i = 0; i < parts.length - 1; i++) {
+                        if (parts[i].equals("via")) {
+                            return parts[i + 1];
+                        }
+                    }
+                }
             }
-            if (relUrl.startsWith("/")) {
-                return schemeHost + relUrl;
-            } else {
-                return schemeHost + "/" + relUrl;
-            }
-        }
+        } catch (Exception ignored) {}
+        return null;
     }
 }

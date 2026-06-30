@@ -35,26 +35,6 @@
     <string name="dashboard_url_hint">http://localhost:8080</string>
     <string name="dashboard_loading">Loading dashboard…</string>
 
-    <!-- Hosting & Tunnel -->
-    <string name="hosting_title">Hosting &amp; Tunnel</string>
-    <string name="hosting_subtitle">Make your server accessible worldwide</string>
-    <string name="hosting_detecting_ip">Detecting…</string>
-    <string name="hosting_ip_not_found">Not found</string>
-    <string name="hosting_nat_direct">Direct (No NAT)</string>
-    <string name="hosting_nat_behind">Behind NAT (UPnP may help)</string>
-    <string name="hosting_nat_cgnat">CGNAT (Carrier-Grade NAT)</string>
-    <string name="hosting_mode_direct">Direct Public IP</string>
-    <string name="hosting_mode_ssh">SSH Tunnel</string>
-    <string name="hosting_mode_cloudflare">Cloudflare Tunnel</string>
-    <string name="hosting_status_active">Active</string>
-    <string name="hosting_status_error">Error</string>
-    <string name="hosting_status_stopped">Stopped</string>
-    <string name="hosting_btn_start">Start</string>
-    <string name="hosting_btn_stop">Stop</string>
-    <string name="hosting_btn_copy">Copy</string>
-    <string name="hosting_btn_open">Open</string>
-    <string name="hosting_btn_refresh_ip">Refresh IP</string>
-
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="settings_engine">Bantu Engine</string>
@@ -68,7 +48,7 @@
     <string name="settings_ddns_domain">Domain</string>
     <string name="settings_ddns_token">API Token</string>
     <string name="settings_about">About</string>
-    <string name="settings_version">BantuDroid v2.5.1</string>
+    <string name="settings_version">BantuDroid v2.2.1</string>
     <string name="settings_github">GitHub Repository</string>
 
     <!-- Notifications -->
@@ -91,4 +71,35 @@
     <string name="success">Success</string>
     <string name="running">Running</string>
     <string name="stopped">Stopped</string>
+
+    <!-- Hosting & Tunnel -->
+    <string name="nav_hosting">Hosting</string>
+    <string name="hosting_title">Hosting &amp; Tunnel</string>
+    <string name="hosting_detect_ip">Detect Public IP</string>
+    <string name="hosting_public_ip">Public IP</string>
+    <string name="hosting_local_ip">Local IP</string>
+    <string name="hosting_gateway">Gateway</string>
+    <string name="hosting_cgnat">CGNAT Detected</string>
+    <string name="hosting_no_cgnat">No CGNAT</string>
+    <string name="hosting_upnp">UPnP Port Forward</string>
+    <string name="hosting_upnp_start">Start UPnP</string>
+    <string name="hosting_upnp_stop">Stop UPnP</string>
+    <string name="hosting_ssh_tunnel">SSH Tunnel</string>
+    <string name="hosting_ssh_start">Start SSH Tunnel</string>
+    <string name="hosting_ssh_stop">Stop SSH Tunnel</string>
+    <string name="hosting_ssh_provider">Provider</string>
+    <string name="hosting_cf_tunnel">Cloudflare Tunnel</string>
+    <string name="hosting_cf_start">Start Cloudflare</string>
+    <string name="hosting_cf_stop">Stop Cloudflare</string>
+    <string name="hosting_port">Port</string>
+    <string name="hosting_status">Status</string>
+    <string name="hosting_log">Log</string>
+    <string name="hosting_mode_direct">Direct (UPnP)</string>
+    <string name="hosting_mode_ssh">SSH Tunnel</string>
+    <string name="hosting_mode_cf">Cloudflare Tunnel</string>
+    <string name="hosting_detecting">Detecting…</string>
+    <string name="hosting_port_forwarded">Port %d forwarded</string>
+    <string name="hosting_port_removed">Port forwarding removed</string>
+    <string name="hosting_tunnel_connected">Tunnel connected</string>
+    <string name="hosting_tunnel_disconnected">Tunnel disconnected</string>
 </resources>

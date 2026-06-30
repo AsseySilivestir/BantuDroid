@@ -59,15 +59,11 @@ public class SettingsActivity extends AppCompatActivity {
             prefs.getString("ddns_token", ""));
 
         tvAbout.setText(
-            "BantuDroid v2.5.1\n" +
+            "BantuDroid v1.0.0\n" +
             "A Bantu language runtime for Android\n\n" +
-            "Features:\n" +
-            "  - Terminal with cd, ls, cat, mkdir, etc.\n" +
-            "  - File manager with real filesystem navigation\n" +
-            "  - Web server with DDNS support\n" +
-            "  - Hosting & Tunnel (UPnP, SSH, Cloudflare)\n" +
-            "  - SQLite, PostgreSQL, MySQL support\n" +
-            "  - Sua web framework built-in\n\n" +
+            "Bantu is a programming language built with C++17.\n" +
+            "Features: Sua web framework, SQLite, PostgreSQL,\n" +
+            "MySQL, WebRTC, and cross-platform support.\n\n" +
             "https://github.com/AsseySilivestir/Bantu"
         );
 

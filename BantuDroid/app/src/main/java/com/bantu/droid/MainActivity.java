@@ -121,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, DashboardActivity.class)));
 
         btnHosting.setOnClickListener(v ->
-            startActivity(new Intent(this, HostingDashboardActivity.class)));
+            startActivity(new Intent(this, TunnelActivity.class)));
 
         btnSettings.setOnClickListener(v ->
             startActivity(new Intent(this, SettingsActivity.class)));

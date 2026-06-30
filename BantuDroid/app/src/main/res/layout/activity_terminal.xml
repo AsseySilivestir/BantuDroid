@@ -125,16 +125,12 @@
         android:background="@color/bg_surface">
 
         <TextView
-            android:id="@+id/prompt_prefix"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="~ $ "
+            android:text="$ "
             android:textColor="@color/bantu_green"
-            android:textSize="14sp"
-            android:fontFamily="monospace"
-            android:maxWidth="200dp"
-            android:ellipsize="start"
-            android:singleLine="true" />
+            android:textSize="16sp"
+            android:fontFamily="monospace" />
 
         <EditText
             android:id="@+id/command_input"
