@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Check connectivity before starting server -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- UPnP SSDP multicast discovery -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Access wifi state for UPnP -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Keep server running when screen is off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Foreground service for background server -->
@@ -59,6 +63,12 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+
+        <!-- Hosting & Tunnel Dashboard -->
+        <activity
+            android:name=".HostingDashboardActivity"
+            android:exported="false"
+            android:label="@string/hosting_title" />
 
         <!-- Background server service -->
         <service

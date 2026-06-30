@@ -30,6 +30,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnTerminal;
     private Button btnFiles;
     private Button btnDashboard;
+    private Button btnHosting;
     private Button btnSettings;
     private TextView tvEngineStatus;
 
@@ -51,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
         btnTerminal = findViewById(R.id.btn_terminal);
         btnFiles = findViewById(R.id.btn_files);
         btnDashboard = findViewById(R.id.btn_dashboard);
+        btnHosting = findViewById(R.id.btn_hosting);
         btnSettings = findViewById(R.id.btn_settings);
         tvEngineStatus = findViewById(R.id.tv_engine_status);
 
@@ -117,6 +119,9 @@ public class MainActivity extends AppCompatActivity {
 
         btnDashboard.setOnClickListener(v ->
             startActivity(new Intent(this, DashboardActivity.class)));
+
+        btnHosting.setOnClickListener(v ->
+            startActivity(new Intent(this, HostingDashboardActivity.class)));
 
         btnSettings.setOnClickListener(v ->
             startActivity(new Intent(this, SettingsActivity.class)));

@@ -35,6 +35,26 @@
     <string name="dashboard_url_hint">http://localhost:8080</string>
     <string name="dashboard_loading">Loading dashboard…</string>
 
+    <!-- Hosting & Tunnel -->
+    <string name="hosting_title">Hosting &amp; Tunnel</string>
+    <string name="hosting_subtitle">Make your server accessible worldwide</string>
+    <string name="hosting_detecting_ip">Detecting…</string>
+    <string name="hosting_ip_not_found">Not found</string>
+    <string name="hosting_nat_direct">Direct (No NAT)</string>
+    <string name="hosting_nat_behind">Behind NAT (UPnP may help)</string>
+    <string name="hosting_nat_cgnat">CGNAT (Carrier-Grade NAT)</string>
+    <string name="hosting_mode_direct">Direct Public IP</string>
+    <string name="hosting_mode_ssh">SSH Tunnel</string>
+    <string name="hosting_mode_cloudflare">Cloudflare Tunnel</string>
+    <string name="hosting_status_active">Active</string>
+    <string name="hosting_status_error">Error</string>
+    <string name="hosting_status_stopped">Stopped</string>
+    <string name="hosting_btn_start">Start</string>
+    <string name="hosting_btn_stop">Stop</string>
+    <string name="hosting_btn_copy">Copy</string>
+    <string name="hosting_btn_open">Open</string>
+    <string name="hosting_btn_refresh_ip">Refresh IP</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="settings_engine">Bantu Engine</string>
@@ -48,7 +68,7 @@
     <string name="settings_ddns_domain">Domain</string>
     <string name="settings_ddns_token">API Token</string>
     <string name="settings_about">About</string>
-    <string name="settings_version">BantuDroid v1.0.0</string>
+    <string name="settings_version">BantuDroid v2.5.0</string>
     <string name="settings_github">GitHub Repository</string>
 
     <!-- Notifications -->
