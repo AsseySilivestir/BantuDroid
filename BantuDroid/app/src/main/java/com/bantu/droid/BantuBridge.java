@@ -62,6 +62,51 @@ public class BantuBridge {
     private native int nativeExec(String binaryPath, String[] args, String workDir);
     private native int[] nativeForkExec(String binaryPath, String[] args, String workDir);
     private native int nativeCheckExecutable(String filePath);
+    private native int nativeWaitForPid(int pid);
+
+    /**
+     * Execute ANY binary via JNI fork+execv and return a raw Process.
+     * This is the static entry point used by TunnelManager to execute
+     * external binaries (like cloudflared) that need to bypass SELinux.
+     *
+     * The returned Process (JniProcess) can be used exactly like a
+     * regular Process — getInputStream(), getErrorStream(), waitFor(),
+     * destroy() all work correctly.
+     *
+     * @param binaryPath  Absolute path to the binary to execute
+     * @param args        Command-line arguments
+     * @param workDir     Working directory for the process
+     * @return a Process object (specifically JniProcess) for the running process
+     * @throws IOException if JNI is not available or fork+exec fails
+     */
+    public static Process executeBinary(String binaryPath, String[] args, String workDir)
+            throws IOException {
+        if (!jniAvailable) {
+            throw new IOException(
+                "JNI bridge not available. Cannot execute external binary: " + binaryPath);
+        }
+
+        // Use a temporary BantuBridge instance to access the native method
+        BantuBridge bridge = new BantuBridge();
+        int[] result = bridge.nativeForkExec(binaryPath, args, workDir);
+
+        if (result == null) {
+            throw new IOException("JNI fork+exec failed for: " + binaryPath);
+        }
+
+        int pid = result[0];
+        int stdoutFd = result[1];
+        int stderrFd = result[2];
+
+        Log.i(TAG, "executeBinary: pid=" + pid + " stdoutFd=" + stdoutFd + " stderrFd=" + stderrFd);
+
+        ParcelFileDescriptor stdoutPfd = ParcelFileDescriptor.adoptFd(stdoutFd);
+        ParcelFileDescriptor stderrPfd = ParcelFileDescriptor.adoptFd(stderrFd);
+        FileInputStream stdoutStream = new FileInputStream(stdoutPfd.getFileDescriptor());
+        FileInputStream stderrStream = new FileInputStream(stderrPfd.getFileDescriptor());
+
+        return new JniProcess(pid, stdoutStream, stderrStream, stdoutPfd, stderrPfd);
+    }
 
     /**
      * Execute the Bantu binary and return a BantuProcess for output streaming.
@@ -175,8 +220,17 @@ public class BantuBridge {
     }
 
     /**
-     * Wrapper around a JNI-forked process that implements enough of the Process API
-     * for BantuProcess to work with.
+     * Wrapper around a JNI-forked process that implements the full Process API.
+     *
+     * This class is used both by BantuBridge (for Bantu execution) and by
+     * TunnelManager (for cloudflared execution). It wraps the file descriptors
+     * returned by nativeForkExec() into a Process-compatible interface.
+     *
+     * Important behavior:
+     * - getInputStream() returns the merged stdout+stderr stream
+     * - destroy() kills the process via SIGKILL
+     * - waitFor() blocks until the stdout pipe closes (process exit)
+     * - destroyForcibly() is supported
      */
     public static class JniProcess extends Process {
         private final int pid;
@@ -193,28 +247,12 @@ public class BantuBridge {
             this.pid = pid;
             this.stdout = stdout;
             this.stderr = stderr;
-            this.combinedOutput = stdout;  // We merge stderr into stdout in JNI
+            // Since nativeForkExec now merges stderr into the stdout pipe,
+            // both stdout and stderr are the same stream. Use stdout for all
+            // output reading — it already contains stderr data.
+            this.combinedOutput = stdout;
             this.stdoutPfd = stdoutPfd;
             this.stderrPfd = stderrPfd;
-
-            // Start a thread to wait for the process to exit
-            new Thread(() -> {
-                try {
-                    int[] status = new int[1];
-                    while (!exited) {
-                        try {
-                            // Try to wait for the process
-                            Thread.sleep(100);
-                            // Check if process is still running
-                            // We'll detect exit when the pipe closes (read returns -1)
-                        } catch (InterruptedException e) {
-                            break;
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "JniProcess watcher error", e);
-                }
-            }, "JniProcess-watcher-" + pid).start();
         }
 
         @Override
@@ -234,19 +272,21 @@ public class BantuBridge {
 
         @Override
         public int waitFor() throws InterruptedException {
-            // Wait for the pipe to close (which happens when child exits)
+            // Use native waitpid() for a proper, reliable wait.
+            // The old implementation tried to detect exit by reading from
+            // the stdout pipe, which failed when the process writes only
+            // to stderr or when another thread is already reading.
             try {
-                while (stdout.available() >= 0 || !exited) {
-                    // Try to read — will block until data or EOF
-                    int b = stdout.read();
-                    if (b == -1) {
-                        exited = true;
-                        exitCode = 0;  // We don't have the real exit code in this simple impl
-                        break;
-                    }
-                }
-            } catch (IOException e) {
-                // Pipe closed = process exited
+                BantuBridge bridge = new BantuBridge();
+                int code = bridge.nativeWaitForPid(pid);
+                exited = true;
+                exitCode = (code >= 0) ? code : 0;
+            } catch (Exception e) {
+                // Fallback: drain stdout until EOF
+                Log.w(TAG, "nativeWaitForPid failed, falling back to pipe drain", e);
+                try {
+                    while (stdout.read() != -1) { /* drain */ }
+                } catch (IOException ignored) {}
                 exited = true;
                 exitCode = 0;
             }
@@ -262,12 +302,12 @@ public class BantuBridge {
         @Override
         public void destroy() {
             if (!exited) {
-                // Kill the process group
+                // Kill the process group first, then the process itself
                 try {
-                    Runtime.getRuntime().exec(new String[]{"kill", "-9", "-" + pid}).waitFor();
+                    Runtime.getRuntime().exec(new String[]{"kill", "-9", "-" + pid}).waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
                 } catch (Exception e1) {
                     try {
-                        Runtime.getRuntime().exec(new String[]{"kill", "-9", String.valueOf(pid)}).waitFor();
+                        Runtime.getRuntime().exec(new String[]{"kill", "-9", String.valueOf(pid)}).waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
                     } catch (Exception e2) {
                         Log.w(TAG, "Failed to kill process " + pid, e2);
                     }
@@ -275,6 +315,17 @@ public class BantuBridge {
                 exited = true;
             }
             closeStreams();
+        }
+
+        @Override
+        public Process destroyForcibly() {
+            destroy();
+            return this;
+        }
+
+        @Override
+        public boolean isAlive() {
+            return !exited;
         }
 
         public int getPid() {

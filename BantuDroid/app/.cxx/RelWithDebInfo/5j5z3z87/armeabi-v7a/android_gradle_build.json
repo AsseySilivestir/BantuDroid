@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/home/z/my-project/BantuDroid/BantuDroid/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/z/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/z/my-project/BantuDroid/BantuDroid/app/.cxx/RelWithDebInfo/5j5z3z87/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/z/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/z/my-project/BantuDroid/BantuDroid/app/.cxx/RelWithDebInfo/5j5z3z87/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "banturun::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "banturun",
+      "output": "/home/z/my-project/BantuDroid/BantuDroid/app/build/intermediates/cxx/RelWithDebInfo/5j5z3z87/obj/armeabi-v7a/libbanturun.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/z/android-sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

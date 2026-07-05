@@ -48,7 +48,7 @@
     <string name="settings_ddns_domain">Domain</string>
     <string name="settings_ddns_token">API Token</string>
     <string name="settings_about">About</string>
-    <string name="settings_version">BantuDroid v2.2.2</string>
+    <string name="settings_version">BantuDroid v2.3.0</string>
     <string name="settings_github">GitHub Repository</string>
 
     <!-- Notifications -->
@@ -102,4 +102,13 @@
     <string name="hosting_port_removed">Port forwarding removed</string>
     <string name="hosting_tunnel_connected">Tunnel connected</string>
     <string name="hosting_tunnel_disconnected">Tunnel disconnected</string>
+
+    <!-- Custom Domain -->
+    <string name="hosting_custom_domain">Custom Domain</string>
+    <string name="hosting_custom_domain_hint">Connect your own domain (e.g., from Namecheap). Creates a Cloudflare named tunnel and auto-configures DNS.</string>
+    <string name="hosting_custom_domain_input">yourdomain.com</string>
+    <string name="hosting_cf_api_token">Cloudflare API Token</string>
+    <string name="hosting_cf_zone_id">Zone ID (auto-detected if empty)</string>
+    <string name="hosting_cf_auto_detect">Auto-detect</string>
+    <string name="hosting_start_custom_domain">Start Custom Domain</string>
 </resources>

@@ -82,7 +82,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="—"
+                        android:text="\u2014"
                         android:textColor="#FFFFFF"
                         android:textSize="14sp"
                         android:fontFamily="monospace" />
@@ -106,7 +106,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="—"
+                        android:text="\u2014"
                         android:textColor="#FFFFFF"
                         android:textSize="14sp"
                         android:fontFamily="monospace" />
@@ -130,7 +130,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="—"
+                        android:text="\u2014"
                         android:textColor="#FFFFFF"
                         android:textSize="14sp"
                         android:fontFamily="monospace" />
@@ -154,7 +154,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="—"
+                        android:text="\u2014"
                         android:textColor="#FFFFFF"
                         android:textSize="14sp"
                         android:fontFamily="monospace" />
@@ -299,7 +299,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Create a public URL via Pinggy, Serveo, or localhost.run. No account needed."
+                    android:text="Create a public URL via Serveo, localhost.run, or Pinggy. No account needed."
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginBottom="12dp" />
@@ -324,6 +324,20 @@
                         android:layout_weight="1"
                         android:popupBackground="@color/bg_card" />
                 </LinearLayout>
+
+                <!-- Provider info note (shows limitation info) -->
+                <TextView
+                    android:id="@+id/tv_provider_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/text_warning"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:visibility="gone"
+                    android:layout_marginBottom="8dp"
+                    android:padding="8dp"
+                    android:background="@color/bg_input" />
 
                 <TextView
                     android:id="@+id/tv_ssh_status"
@@ -454,6 +468,139 @@
                         android:textColor="#FFFFFF"
                         android:enabled="false" />
                 </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Custom Domain Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Custom Domain"
+                    android:textColor="#CE93D8"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Connect your own domain (e.g., from Namecheap). Creates a Cloudflare named tunnel and configures DNS automatically."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="12dp" />
+
+                <!-- Domain input -->
+                <EditText
+                    android:id="@+id/et_custom_domain"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@color/bg_input"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_hint"
+                    android:hint="yourdomain.com"
+                    android:textSize="14sp"
+                    android:fontFamily="monospace"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:inputType="textUri"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- API Token input -->
+                <EditText
+                    android:id="@+id/et_cf_api_token"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@color/bg_input"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_hint"
+                    android:hint="Cloudflare API Token"
+                    android:textSize="13sp"
+                    android:fontFamily="monospace"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:inputType="textPassword"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Zone ID row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <EditText
+                        android:id="@+id/et_cf_zone_id"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:background="@color/bg_input"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_hint"
+                        android:hint="Zone ID (auto-detected if empty)"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:inputType="text"
+                        android:layout_marginEnd="8dp" />
+
+                    <Button
+                        android:id="@+id/btn_auto_zone_id"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Auto-detect"
+                        android:textSize="11sp"
+                        android:backgroundTint="#CE93D8"
+                        android:textColor="@color/black"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+                </LinearLayout>
+
+                <!-- Status -->
+                <TextView
+                    android:id="@+id/tv_custom_domain_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Configure your domain and Cloudflare credentials above."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- URL display -->
+                <TextView
+                    android:id="@+id/tv_custom_domain_url"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/bantu_green"
+                    android:textSize="14sp"
+                    android:fontFamily="monospace"
+                    android:visibility="gone"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Start button -->
+                <Button
+                    android:id="@+id/btn_start_custom_domain"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:text="Start Custom Domain"
+                    android:textSize="13sp"
+                    android:backgroundTint="#CE93D8"
+                    android:textColor="@color/black" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

@@ -1,0 +1,3 @@
+/home/z/my-project/BantuDroid/BantuDroid/app/.cxx/RelWithDebInfo/5j5z3z87/armeabi-v7a/CMakeFiles/banturun.dir
+/home/z/my-project/BantuDroid/BantuDroid/app/.cxx/RelWithDebInfo/5j5z3z87/armeabi-v7a/CMakeFiles/edit_cache.dir
+/home/z/my-project/BantuDroid/BantuDroid/app/.cxx/RelWithDebInfo/5j5z3z87/armeabi-v7a/CMakeFiles/rebuild_cache.dir

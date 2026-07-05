@@ -12,6 +12,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.preference.PreferenceManager;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -26,8 +27,9 @@ import java.util.Enumeration;
  * - Local IP & gateway display
  * - CGNAT detection
  * - UPnP port forwarding (auto port map via router)
- * - SSH reverse tunnel (Pinggy/Serveo/localhost.run)
+ * - SSH reverse tunnel (Serveo/localhost.run/Pinggy)
  * - Cloudflare quick tunnel (via cloudflared binary)
+ * - Cloudflare named tunnel with custom domain support
  *
  * This activity does NOT replace the Dashboard — it's a separate
  * tool focused on network tunneling and port forwarding.
@@ -44,6 +46,12 @@ public class TunnelActivity extends AppCompatActivity {
     private TextView tvLog;
     private ScrollView logScroll;
 
+    // Custom domain views
+    private EditText etCustomDomain, etCfApiToken, etCfZoneId;
+    private Button btnAutoZoneId, btnStartCustomDomain;
+    private TextView tvCustomDomainStatus, tvCustomDomainUrl;
+    private TextView tvProviderNote;
+
     // Managers
     private UpnpPortMapper upnp;
     private TunnelManager tunnelMgr;
@@ -53,14 +61,18 @@ public class TunnelActivity extends AppCompatActivity {
     private String localIp;
     private String gateway;
 
+    // Track whether activity is still alive to prevent callback crashes
+    private volatile boolean activityAlive = true;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        activityAlive = true;
         setContentView(R.layout.activity_tunnel);
 
-        // Initialize managers
+        // Initialize managers — TunnelManager now needs Context
         upnp = new UpnpPortMapper();
-        tunnelMgr = new TunnelManager();
+        tunnelMgr = new TunnelManager(this);
 
         // Bind views
         tvPublicIp = findViewById(R.id.tv_public_ip);
@@ -87,6 +99,19 @@ public class TunnelActivity extends AppCompatActivity {
         tvLog = findViewById(R.id.tv_log);
         logScroll = findViewById(R.id.log_scroll);
 
+        // Custom domain views
+        etCustomDomain = findViewById(R.id.et_custom_domain);
+        etCfApiToken = findViewById(R.id.et_cf_api_token);
+        etCfZoneId = findViewById(R.id.et_cf_zone_id);
+        btnAutoZoneId = findViewById(R.id.btn_auto_zone_id);
+        btnStartCustomDomain = findViewById(R.id.btn_start_custom_domain);
+        tvCustomDomainStatus = findViewById(R.id.tv_custom_domain_status);
+        tvCustomDomainUrl = findViewById(R.id.tv_custom_domain_url);
+        tvProviderNote = findViewById(R.id.tv_provider_note);
+
+        // Load saved custom domain settings
+        loadCustomDomainSettings();
+
         // Set up SSH provider spinner
         String[] providerNames = new String[TunnelManager.SSH_PROVIDERS.length];
         for (int i = 0; i < TunnelManager.SSH_PROVIDERS.length; i++) {
@@ -96,6 +121,23 @@ public class TunnelActivity extends AppCompatActivity {
             android.R.layout.simple_spinner_item, providerNames);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerSshProvider.setAdapter(adapter);
+
+        // Show provider note when selection changes
+        spinnerSshProvider.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                        int position, long id) {
+                if (position < TunnelManager.SSH_PROVIDER_NOTES.length) {
+                    tvProviderNote.setText(TunnelManager.SSH_PROVIDER_NOTES[position]);
+                    tvProviderNote.setVisibility(View.VISIBLE);
+                }
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {
+                tvProviderNote.setVisibility(View.GONE);
+            }
+        });
 
         // Detect local IP immediately
         detectLocalNetwork();
@@ -111,6 +153,10 @@ public class TunnelActivity extends AppCompatActivity {
 
         btnCfStart.setOnClickListener(v -> startCloudflareTunnel());
         btnCfStop.setOnClickListener(v -> stopCloudflareTunnel());
+
+        // Custom domain button handlers
+        btnAutoZoneId.setOnClickListener(v -> autoDetectZoneId());
+        btnStartCustomDomain.setOnClickListener(v -> startCustomDomainTunnel());
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -121,8 +167,8 @@ public class TunnelActivity extends AppCompatActivity {
         localIp = UpnpPortMapper.getLocalIp();
         gateway = UpnpPortMapper.getGateway();
 
-        tvLocalIp.setText(localIp != null ? localIp : "—");
-        tvGateway.setText(gateway != null ? gateway : "—");
+        tvLocalIp.setText(localIp != null ? localIp : "\u2014");
+        tvGateway.setText(gateway != null ? gateway : "\u2014");
     }
 
     private void detectPublicIp() {
@@ -139,13 +185,13 @@ public class TunnelActivity extends AppCompatActivity {
                     boolean cgnat = UpnpPortMapper.isCgnat(publicIp);
                     if (cgnat) {
                         tvNatType.setText("CGNAT (Carrier-Grade NAT)");
-                        tvNatType.setTextColor(0xFFF44336); // Red
+                        tvNatType.setTextColor(0xFFF44336);
                         log("WARNING: CGNAT detected! Direct access may not work.");
                         log("Use SSH Tunnel or Cloudflare Tunnel instead.");
                     } else {
                         tvNatType.setText("Public IP (No CGNAT)");
-                        tvNatType.setTextColor(0xFF4CAF50); // Green
-                        log("Public IP detected: " + publicIp + " — no CGNAT, UPnP should work.");
+                        tvNatType.setTextColor(0xFF4CAF50);
+                        log("Public IP detected: " + publicIp + " \u2014 no CGNAT, UPnP should work.");
                     }
                 } else {
                     tvPublicIp.setText("Failed");
@@ -310,7 +356,7 @@ public class TunnelActivity extends AppCompatActivity {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Cloudflare Tunnel
+    // Cloudflare Quick Tunnel
     // ──────────────────────────────────────────────────────────────
 
     private void startCloudflareTunnel() {
@@ -323,14 +369,14 @@ public class TunnelActivity extends AppCompatActivity {
         tunnelMgr.startCloudflareTunnel(port, new TunnelManager.TunnelCallback() {
             @Override
             public void onMessage(String msg) {
-                runOnUiThread(() -> {
+                safeUi(() -> {
                     log("[CF] " + msg);
                     tvCfStatus.setText(msg);
                 });
             }
             @Override
             public void onError(String err) {
-                runOnUiThread(() -> {
+                safeUi(() -> {
                     log("[CF] ERROR: " + err);
                     tvCfStatus.setText("Error: " + err);
                     btnCfStart.setEnabled(true);
@@ -339,7 +385,7 @@ public class TunnelActivity extends AppCompatActivity {
             }
             @Override
             public void onConnected(String url) {
-                runOnUiThread(() -> {
+                safeUi(() -> {
                     tvCfUrl.setText(url);
                     tvCfUrl.setVisibility(View.VISIBLE);
                     btnCfStart.setEnabled(false);
@@ -359,7 +405,7 @@ public class TunnelActivity extends AppCompatActivity {
             }
             @Override
             public void onDisconnected() {
-                runOnUiThread(() -> {
+                safeUi(() -> {
                     tvCfStatus.setText("Disconnected");
                     btnCfStart.setEnabled(true);
                     btnCfStop.setEnabled(false);
@@ -375,6 +421,217 @@ public class TunnelActivity extends AppCompatActivity {
         btnCfStop.setEnabled(false);
         tvCfStatus.setText("Stopping...");
         tvCfUrl.setVisibility(View.GONE);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Custom Domain Tunnel (Cloudflare Named Tunnel)
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Auto-detect the Cloudflare Zone ID from the domain name.
+     * Calls the Cloudflare API to look up the zone.
+     */
+    private void autoDetectZoneId() {
+        String domain = etCustomDomain.getText().toString().trim();
+        String apiToken = etCfApiToken.getText().toString().trim();
+
+        if (domain.isEmpty()) {
+            Toast.makeText(this, "Enter a domain name first",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (apiToken.isEmpty()) {
+            Toast.makeText(this, "Enter a Cloudflare API token first",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        btnAutoZoneId.setEnabled(false);
+        btnAutoZoneId.setText("Looking up...");
+        tvCustomDomainStatus.setText("Looking up Zone ID for " + domain + "...");
+
+        new Thread(() -> {
+            String zoneId = CloudflareApi.getZoneId(apiToken, domain,
+                new TunnelManager.TunnelCallback() {
+                    @Override
+                    public void onMessage(String msg) {
+                        runOnUiThread(() -> {
+                            log("[CustomDomain] " + msg);
+                            tvCustomDomainStatus.setText(msg);
+                        });
+                    }
+                    @Override
+                    public void onError(String err) {
+                        runOnUiThread(() -> {
+                            log("[CustomDomain] ERROR: " + err);
+                            tvCustomDomainStatus.setText("Error: " + err);
+                        });
+                    }
+                    @Override
+                    public void onConnected(String url) {}
+                    @Override
+                    public void onDisconnected() {}
+                });
+
+            runOnUiThread(() -> {
+                btnAutoZoneId.setEnabled(true);
+                btnAutoZoneId.setText("Auto-detect");
+                if (zoneId != null) {
+                    etCfZoneId.setText(zoneId);
+                    tvCustomDomainStatus.setText("Zone ID found: " + zoneId);
+                    log("[CustomDomain] Zone ID: " + zoneId);
+                } else {
+                    tvCustomDomainStatus.setText("Zone ID lookup failed. Enter it manually.");
+                }
+            });
+        }).start();
+    }
+
+    /**
+     * Start a Cloudflare named tunnel with a custom domain.
+     * This creates a tunnel, configures DNS, and starts cloudflared.
+     */
+    private void startCustomDomainTunnel() {
+        String domain = etCustomDomain.getText().toString().trim();
+        String apiToken = etCfApiToken.getText().toString().trim();
+        String zoneId = etCfZoneId.getText().toString().trim();
+        int port = getPort();
+
+        // Validate inputs
+        if (domain.isEmpty()) {
+            Toast.makeText(this, "Enter a custom domain",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (apiToken.isEmpty()) {
+            Toast.makeText(this, "Enter a Cloudflare API token",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Save settings for next time
+        saveCustomDomainSettings();
+
+        btnStartCustomDomain.setEnabled(false);
+        btnStartCustomDomain.setText("Starting...");
+        tvCustomDomainUrl.setVisibility(View.GONE);
+
+        // If zone ID is empty, try to auto-detect first
+        if (zoneId.isEmpty()) {
+            tvCustomDomainStatus.setText("Auto-detecting Zone ID...");
+            new Thread(() -> {
+                String detectedZoneId = CloudflareApi.getZoneId(apiToken, domain,
+                    new TunnelManager.TunnelCallback() {
+                        @Override
+                        public void onMessage(String msg) {
+                            runOnUiThread(() -> {
+                                log("[CustomDomain] " + msg);
+                            });
+                        }
+                        @Override
+                        public void onError(String err) {
+                            runOnUiThread(() -> {
+                                log("[CustomDomain] ERROR: " + err);
+                                tvCustomDomainStatus.setText("Zone lookup failed: " + err);
+                                btnStartCustomDomain.setEnabled(true);
+                                btnStartCustomDomain.setText("Start Custom Domain");
+                            });
+                        }
+                        @Override
+                        public void onConnected(String url) {}
+                        @Override
+                        public void onDisconnected() {}
+                    });
+
+                if (detectedZoneId != null) {
+                    runOnUiThread(() -> {
+                        etCfZoneId.setText(detectedZoneId);
+                        startNamedTunnel(port, domain, apiToken, detectedZoneId);
+                    });
+                }
+            }).start();
+        } else {
+            startNamedTunnel(port, domain, apiToken, zoneId);
+        }
+    }
+
+    /**
+     * Actually start the named tunnel after we have all required parameters.
+     */
+    private void startNamedTunnel(int port, String domain, String apiToken, String zoneId) {
+        tunnelMgr.startCloudflareNamedTunnel(port, domain, apiToken, zoneId,
+            new TunnelManager.TunnelCallback() {
+                @Override
+                public void onMessage(String msg) {
+                    runOnUiThread(() -> {
+                        log("[CustomDomain] " + msg);
+                        tvCustomDomainStatus.setText(msg);
+                    });
+                }
+                @Override
+                public void onError(String err) {
+                    runOnUiThread(() -> {
+                        log("[CustomDomain] ERROR: " + err);
+                        tvCustomDomainStatus.setText("Error: " + err);
+                        btnStartCustomDomain.setEnabled(true);
+                        btnStartCustomDomain.setText("Start Custom Domain");
+                    });
+                }
+                @Override
+                public void onConnected(String url) {
+                    runOnUiThread(() -> {
+                        tvCustomDomainUrl.setText(url);
+                        tvCustomDomainUrl.setVisibility(View.VISIBLE);
+                        btnStartCustomDomain.setEnabled(false);
+                        btnStartCustomDomain.setText("Running");
+                        btnCfStart.setEnabled(false);
+                        btnCfStop.setEnabled(true);
+                        log("[CustomDomain] Your site is live at: " + url);
+
+                        // Make URL clickable
+                        tvCustomDomainUrl.setOnClickListener(v -> {
+                            android.content.ClipboardManager clipboard =
+                                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            android.content.ClipData clip =
+                                android.content.ClipData.newPlainText("Custom Domain", url);
+                            clipboard.setPrimaryClip(clip);
+                            Toast.makeText(TunnelActivity.this,
+                                "URL copied to clipboard", Toast.LENGTH_SHORT).show();
+                        });
+                    });
+                }
+                @Override
+                public void onDisconnected() {
+                    runOnUiThread(() -> {
+                        tvCustomDomainStatus.setText("Disconnected");
+                        btnStartCustomDomain.setEnabled(true);
+                        btnStartCustomDomain.setText("Start Custom Domain");
+                        btnCfStart.setEnabled(true);
+                        btnCfStop.setEnabled(false);
+                        tvCustomDomainUrl.setVisibility(View.GONE);
+                    });
+                }
+            });
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Settings persistence
+    // ──────────────────────────────────────────────────────────────
+
+    private void loadCustomDomainSettings() {
+        android.content.SharedPreferences prefs =
+            PreferenceManager.getDefaultSharedPreferences(this);
+        etCustomDomain.setText(prefs.getString("custom_domain", ""));
+        etCfApiToken.setText(prefs.getString("cf_api_token", ""));
+        etCfZoneId.setText(prefs.getString("cf_zone_id", ""));
+    }
+
+    private void saveCustomDomainSettings() {
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString("custom_domain", etCustomDomain.getText().toString().trim())
+            .putString("cf_api_token", etCfApiToken.getText().toString().trim())
+            .putString("cf_zone_id", etCfZoneId.getText().toString().trim())
+            .apply();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -398,8 +655,22 @@ public class TunnelActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        activityAlive = false;
+        // Save custom domain settings before destroying
+        saveCustomDomainSettings();
+
         tunnelMgr.stopSshTunnel();
         tunnelMgr.stopCloudflareTunnel();
         super.onDestroy();
+    }
+
+    /**
+     * Safe wrapper for runOnUiThread that checks if the activity is still alive.
+     * Prevents crashes when tunnel callbacks fire after the activity is destroyed.
+     */
+    private void safeUi(Runnable action) {
+        if (activityAlive && !isFinishing() && !isDestroyed()) {
+            runOnUiThread(action);
+        }
     }
 }

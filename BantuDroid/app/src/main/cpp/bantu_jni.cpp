@@ -210,10 +210,13 @@ Java_com_bantu_droid_BantuBridge_nativeForkExec(JNIEnv *env, jobject thiz,
     // Ensure binary is executable
     chmod(binary, 0755);
 
-    // Create pipes for stdout and stderr
-    int stdoutPipe[2];
-    int stderrPipe[2];
-    if (pipe(stdoutPipe) == -1 || pipe(stderrPipe) == -1) {
+    // Create a single pipe for merged stdout+stderr.
+    // Many CLI tools (e.g., cloudflared) write all log output including
+    // URLs to stderr. Merging them into one pipe ensures the Java side
+    // sees ALL output from getInputStream() without needing to read
+    // two separate streams.
+    int outPipe[2];
+    if (pipe(outPipe) == -1) {
         LOGE("pipe() failed: %s", strerror(errno));
         env->ReleaseStringUTFChars(binaryPath, binary);
         env->ReleaseStringUTFChars(workDir, workdir);
@@ -224,8 +227,7 @@ Java_com_bantu_droid_BantuBridge_nativeForkExec(JNIEnv *env, jobject thiz,
 
     if (pid == -1) {
         LOGE("fork() failed: %s", strerror(errno));
-        close(stdoutPipe[0]); close(stdoutPipe[1]);
-        close(stderrPipe[0]); close(stderrPipe[1]);
+        close(outPipe[0]); close(outPipe[1]);
         env->ReleaseStringUTFChars(binaryPath, binary);
         env->ReleaseStringUTFChars(workDir, workdir);
         return nullptr;
@@ -233,14 +235,12 @@ Java_com_bantu_droid_BantuBridge_nativeForkExec(JNIEnv *env, jobject thiz,
 
     if (pid == 0) {
         // ── Child process ──
-        close(stdoutPipe[0]);
-        close(stderrPipe[0]);
+        close(outPipe[0]);
 
-        // Redirect stdout/stderr
-        dup2(stdoutPipe[1], STDOUT_FILENO);
-        dup2(stderrPipe[1], STDERR_FILENO);
-        close(stdoutPipe[1]);
-        close(stderrPipe[1]);
+        // Redirect both stdout and stderr into the single pipe
+        dup2(outPipe[1], STDOUT_FILENO);
+        dup2(outPipe[1], STDERR_FILENO);
+        close(outPipe[1]);
 
         // Change working directory
         if (workdir != nullptr) {
@@ -259,15 +259,13 @@ Java_com_bantu_droid_BantuBridge_nativeForkExec(JNIEnv *env, jobject thiz,
     }
 
     // ── Parent process ──
-    close(stdoutPipe[1]);
-    close(stderrPipe[1]);
+    close(outPipe[1]);
 
-    LOGI("nativeForkExec: child pid=%d, stdoutFd=%d, stderrFd=%d",
-         pid, stdoutPipe[0], stderrPipe[0]);
+    LOGI("nativeForkExec: child pid=%d, mergedFd=%d", pid, outPipe[0]);
 
-    // Return [pid, stdoutFd, stderrFd]
+    // Return [pid, mergedFd, mergedFd] — both entries point to the same pipe
     jintArray result = env->NewIntArray(3);
-    jint data[3] = {pid, stdoutPipe[0], stderrPipe[0]};
+    jint data[3] = {pid, outPipe[0], outPipe[0]};
     env->SetIntArrayRegion(result, 0, 3, data);
 
     env->ReleaseStringUTFChars(binaryPath, binary);
@@ -302,6 +300,31 @@ Java_com_bantu_droid_BantuBridge_nativeCheckExecutable(JNIEnv *env, jobject thiz
 
     env->ReleaseStringUTFChars(filePath, path);
     return 0;  // OK
+}
+
+/**
+ * Wait for a child process to exit and return its status.
+ * Uses proper waitpid() instead of pipe-EOF heuristics.
+ *
+ * @param pid  process ID to wait for
+ * @return exit code (0-255), or -1 on error (e.g., ECHILD)
+ */
+JNIEXPORT jint JNICALL
+Java_com_bantu_droid_BantuBridge_nativeWaitForPid(JNIEnv *env, jobject thiz,
+    jint pid) {
+    int status = 0;
+    pid_t ret = waitpid((pid_t)pid, &status, 0);
+    if (ret == -1) {
+        LOGE("nativeWaitForPid(%d) failed: %s", (int)pid, strerror(errno));
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
 }
 
 } // extern "C"
