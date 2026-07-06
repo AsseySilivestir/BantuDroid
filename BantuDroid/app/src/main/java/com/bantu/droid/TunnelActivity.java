@@ -1,6 +1,7 @@
 package com.bantu.droid;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -40,7 +41,7 @@ public class TunnelActivity extends AppCompatActivity {
     private TextView tvPublicIp, tvLocalIp, tvGateway, tvNatType;
     private EditText etPort;
     private Button btnDetectIp, btnUpnpStart, btnUpnpStop;
-    private Button btnSshStart, btnSshStop, btnCfStart, btnCfStop;
+    private Button btnSshStart, btnSshStop, btnCfStart, btnCfStop, btnTestUrl;
     private TextView tvUpnpStatus, tvSshStatus, tvSshUrl, tvCfStatus, tvCfUrl;
     private Spinner spinnerSshProvider;
     private TextView tvLog;
@@ -63,6 +64,7 @@ public class TunnelActivity extends AppCompatActivity {
 
     // Track whether activity is still alive to prevent callback crashes
     private volatile boolean activityAlive = true;
+    private android.content.BroadcastReceiver tunnelReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,6 +90,7 @@ public class TunnelActivity extends AppCompatActivity {
         btnSshStop = findViewById(R.id.btn_ssh_stop);
         btnCfStart = findViewById(R.id.btn_cf_start);
         btnCfStop = findViewById(R.id.btn_cf_stop);
+        btnTestUrl = findViewById(R.id.btn_test_url);
 
         tvUpnpStatus = findViewById(R.id.tv_upnp_status);
         tvSshStatus = findViewById(R.id.tv_ssh_status);
@@ -154,9 +157,74 @@ public class TunnelActivity extends AppCompatActivity {
         btnCfStart.setOnClickListener(v -> startCloudflareTunnel());
         btnCfStop.setOnClickListener(v -> stopCloudflareTunnel());
 
+        // Open the public URL in the device's browser — tests the tunnel end-to-end
+        btnTestUrl.setOnClickListener(v -> {
+            String url = TunnelService.getCurrentPublicUrl();
+            if (url == null || url.isEmpty()) {
+                Toast.makeText(this, "No tunnel URL yet — start the tunnel first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!url.endsWith("/")) url = url + "/";
+            log("[Tunnel] Opening in browser: " + url);
+            try {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                startActivity(browserIntent);
+            } catch (Exception e) {
+                Toast.makeText(this, "No browser app available", Toast.LENGTH_SHORT).show();
+            }
+        });
+
         // Custom domain button handlers
         btnAutoZoneId.setOnClickListener(v -> autoDetectZoneId());
         btnStartCustomDomain.setOnClickListener(v -> startCustomDomainTunnel());
+
+        // Register receiver to get tunnel status from TunnelService
+        tunnelReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, Intent intent) {
+                String action = intent.getAction();
+                if ("com.bantu.droid.TUNNEL_CONNECTED".equals(action)) {
+                    final String url = intent.getStringExtra("url");
+                    runOnUiThread(() -> {
+                        tvSshUrl.setText(url);
+                        tvSshUrl.setVisibility(View.VISIBLE);
+                        btnSshStart.setEnabled(false);
+                        btnSshStop.setEnabled(true);
+                        btnTestUrl.setEnabled(true);
+                        tvSshStatus.setText("Active (running in background)");
+                        log("[Tunnel] Public URL: " + url);
+                        tvSshUrl.setOnClickListener(v -> {
+                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            android.content.ClipData clip = android.content.ClipData.newPlainText("Tunnel URL", url);
+                            clipboard.setPrimaryClip(clip);
+                            Toast.makeText(TunnelActivity.this, "URL copied to clipboard", Toast.LENGTH_SHORT).show();
+                        });
+                    });
+                } else if ("com.bantu.droid.TUNNEL_DISCONNECTED".equals(action)) {
+                    runOnUiThread(() -> {
+                        tvSshStatus.setText("Disconnected");
+                        btnSshStart.setEnabled(true);
+                        btnSshStop.setEnabled(false);
+                        btnTestUrl.setEnabled(false);
+                        tvSshUrl.setVisibility(View.GONE);
+                    });
+                }
+            }
+        };
+        android.content.IntentFilter f = new android.content.IntentFilter();
+        f.addAction("com.bantu.droid.TUNNEL_CONNECTED");
+        f.addAction("com.bantu.droid.TUNNEL_DISCONNECTED");
+        registerReceiver(tunnelReceiver, f, android.content.Context.RECEIVER_NOT_EXPORTED);
+
+        // Reflect current service state on entry
+        if (TunnelService.isRunning()) {
+            String url = TunnelService.getCurrentPublicUrl();
+            btnSshStart.setEnabled(false);
+            btnSshStop.setEnabled(true);
+            btnTestUrl.setEnabled(url != null);
+            tvSshStatus.setText("Active (running in background)");
+            if (url != null) { tvSshUrl.setText(url); tvSshUrl.setVisibility(View.VISIBLE); }
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -291,66 +359,24 @@ public class TunnelActivity extends AppCompatActivity {
     private void startSshTunnel() {
         int port = getPort();
         int providerIdx = spinnerSshProvider.getSelectedItemPosition();
-        String providerName = TunnelManager.SSH_PROVIDERS[providerIdx][0];
+
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putInt("tunnel_provider_index", providerIdx)
+            .putInt("default_port", port)
+            .apply();
 
         btnSshStart.setEnabled(false);
-        tvSshStatus.setText("Connecting to " + providerName + "...");
+        tvSshStatus.setText("Starting foreground service...");
         tvSshUrl.setVisibility(View.GONE);
-
-        tunnelMgr.startSshTunnel(providerIdx, port, new TunnelManager.TunnelCallback() {
-            @Override
-            public void onMessage(String msg) {
-                runOnUiThread(() -> {
-                    log("[SSH] " + msg);
-                    tvSshStatus.setText(msg);
-                });
-            }
-            @Override
-            public void onError(String err) {
-                runOnUiThread(() -> {
-                    log("[SSH] ERROR: " + err);
-                    tvSshStatus.setText("Error: " + err);
-                    btnSshStart.setEnabled(true);
-                    btnSshStop.setEnabled(false);
-                });
-            }
-            @Override
-            public void onConnected(String url) {
-                runOnUiThread(() -> {
-                    tvSshUrl.setText(url);
-                    tvSshUrl.setVisibility(View.VISIBLE);
-                    btnSshStart.setEnabled(false);
-                    btnSshStop.setEnabled(true);
-                    log("[SSH] Public URL: " + url);
-
-                    // Make URL clickable to copy
-                    tvSshUrl.setOnClickListener(v -> {
-                        android.content.ClipboardManager clipboard =
-                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                        android.content.ClipData clip =
-                            android.content.ClipData.newPlainText("Tunnel URL", url);
-                        clipboard.setPrimaryClip(clip);
-                        Toast.makeText(TunnelActivity.this,
-                            "URL copied to clipboard", Toast.LENGTH_SHORT).show();
-                    });
-                });
-            }
-            @Override
-            public void onDisconnected() {
-                runOnUiThread(() -> {
-                    tvSshStatus.setText("Disconnected");
-                    btnSshStart.setEnabled(true);
-                    btnSshStop.setEnabled(false);
-                    tvSshUrl.setVisibility(View.GONE);
-                });
-            }
-        });
+        log("[Tunnel] Starting foreground service — tunnel will survive app backgrounding.");
+        TunnelService.start(this, providerIdx, port);
     }
 
     private void stopSshTunnel() {
-        tunnelMgr.stopSshTunnel();
+        TunnelService.stop(this);
         btnSshStart.setEnabled(true);
         btnSshStop.setEnabled(false);
+        btnTestUrl.setEnabled(false);
         tvSshStatus.setText("Stopping...");
         tvSshUrl.setVisibility(View.GONE);
     }
@@ -656,10 +682,12 @@ public class TunnelActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         activityAlive = false;
-        // Save custom domain settings before destroying
         saveCustomDomainSettings();
-
-        tunnelMgr.stopSshTunnel();
+        if (tunnelReceiver != null) {
+            try { unregisterReceiver(tunnelReceiver); } catch (Exception ignored) {}
+        }
+        // NOTE: we do NOT stop the tunnel here — that's the whole point
+        // of the foreground service. The tunnel keeps running in background.
         tunnelMgr.stopCloudflareTunnel();
         super.onDestroy();
     }

@@ -55,7 +55,7 @@ public class FileManagerActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
     private FileAdapter adapter;
     private TextView tvBreadcrumb;
-    private Button btnBack, btnAddFile, btnAddFolder, btnRefresh;
+    private Button btnBack, btnAddFile, btnAddFolder, btnRefresh, btnTree;
 
     // Navigation state
     private List<BantuEngine.BantuProject> projects = new ArrayList<>();
@@ -82,11 +82,13 @@ public class FileManagerActivity extends AppCompatActivity {
         btnAddFile = findViewById(R.id.btn_add_file);
         btnAddFolder = findViewById(R.id.btn_add_folder);
         btnRefresh = findViewById(R.id.btn_refresh);
+        btnTree = findViewById(R.id.btn_tree);
 
         btnBack.setOnClickListener(v -> navigateUp());
         btnAddFile.setOnClickListener(v -> showCreateFileDialog());
         btnAddFolder.setOnClickListener(v -> showCreateFolderDialog());
         btnRefresh.setOnClickListener(v -> refresh());
+        btnTree.setOnClickListener(v -> showTreeDialog());
 
         // Register for data change notifications from terminal
         dataChangedReceiver = new BroadcastReceiver() {
@@ -555,5 +557,38 @@ public class FileManagerActivity extends AppCompatActivity {
                 btnDelete = itemView.findViewById(R.id.btn_file_delete);
             }
         }
+    }
+
+    private void showTreeDialog() {
+        File target = (currentDir != null) ? currentDir : engine.getWorkspaceRoot();
+        if (target == null || !target.exists()) {
+            Toast.makeText(this, "No folder to display", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new Thread(() -> {
+            TreeRenderer renderer = new TreeRenderer(target, false, 10, false);
+            final String treeText = renderer.render();
+            runOnUiThread(() -> {
+                TextView treeView = new TextView(this);
+                treeView.setTypeface(android.graphics.Typeface.MONOSPACE);
+                treeView.setText(treeText);
+                treeView.setTextSize(11f);
+                treeView.setTextColor(0xFFE0E0E0);
+                treeView.setPadding(48, 32, 48, 32);
+                android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+                scroll.addView(treeView);
+                new AlertDialog.Builder(this)
+                    .setTitle("Tree - " + target.getName())
+                    .setView(scroll)
+                    .setPositiveButton("Copy", (d, w) -> {
+                        android.content.ClipboardManager clip = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        android.content.ClipData data = android.content.ClipData.newPlainText("tree", treeText);
+                        clip.setPrimaryClip(data);
+                        Toast.makeText(this, "Tree copied to clipboard", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("Close", null)
+                    .show();
+            });
+        }).start();
     }
 }

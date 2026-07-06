@@ -153,3 +153,97 @@ Added a complete custom domain system that allows users to connect their own dom
 | `CloudflareApi.java` | New file | Cloudflare API client for tunnel/DNS management |
 | `activity_tunnel.xml` | Enhancement | Added Custom Domain card, provider note TextView |
 | `strings.xml` | Enhancement | Added custom domain strings |
+
+---
+
+## Task ID 3 — Bantu self-hosted tunnel + TunnelService + DNS + Tree/Busybox integration
+
+### Overview
+Integrated the previously-created NEW files (BantuTunnelClient, TunnelService, DnsActivity, BusyboxExecutor, TreeRenderer) into the EXISTING BantuDroid codebase. Bumped version to 2.10.1 (versionCode 296). All twelve modification tasks completed.
+
+### Changes by file
+
+**1. `app/build.gradle`**
+- Bumped `versionCode` 293 → 296 and `versionName` "2.9.3" → "2.10.1".
+- Added `implementation 'com.squareup.okhttp3:okhttp:4.12.0'` (required by `BantuTunnelClient`'s WebSocket transport).
+
+**2. `app/src/main/AndroidManifest.xml`**
+- Registered new `.DnsActivity` (exported=false) after `.TunnelActivity`.
+- Registered new `.TunnelService` foreground service (`foregroundServiceType="dataSync"`, exported=false) after `.ServerService`.
+
+**3. `app/src/main/java/com/bantu/droid/TunnelManager.java`**
+- Prepended `{"Bantu", "bantu-tunnel", "443", "bantu"}` to `SSH_PROVIDERS` array (now 4 entries, Bantu is the recommended first option).
+- Prepended a Bantu explainer note to `SSH_PROVIDER_NOTES`. Updated the Pinggy note to suggest "Bantu or Serveo" instead of "Serveo or localhost.run".
+- Added `BantuTunnelClient bantuClient` and `volatile boolean bantuRunning` fields between the SSH and cloudflared state.
+- `startSshTunnel()` now rejects if either `sshRunning` OR `bantuRunning` is set, and delegates to `startBantuTunnel()` when the selected provider's key is `"bantu"`.
+- Rewrote `stopSshTunnel()` to also stop a running Bantu tunnel.
+- Added new `startBantuTunnel(int localPort, TunnelCallback cb)` method that constructs a `BantuTunnelClient`, validates configuration, then bridges its Callback to the existing `TunnelCallback` interface.
+- Added `isBantuRunning()` accessor.
+
+**4. `app/src/main/java/com/bantu/droid/SettingsActivity.java`**
+- Added four new fields: `etBantuServerUrl`, `etBantuSubdomain`, `etBantuToken`, `btnSaveBantu`.
+- Wired them in `onCreate()` via `findViewById`.
+- Pre-populated them from SharedPreferences keys `bantu_server_url`, `bantu_subdomain`, `bantu_token`.
+- Added `btnSaveBantu.setOnClickListener(v -> saveBantuSettings())`.
+- Added new `saveBantuSettings()` method that trims a single trailing `/` and any trailing `/ws` suffix from the server URL before persisting, and shows a confirmation toast.
+
+**5. `app/src/main/res/layout/activity_settings.xml`**
+- Inserted a "BANTU TUNNEL (self-hosted)" section between the DDNS section and the About section: a heading TextView, a hint TextView, three monospace EditTexts (server URL, subdomain, auth token), and a "Save Bantu Tunnel Settings" button (`@id/btn_save_bantu`).
+
+**6. `app/src/main/java/com/bantu/droid/MainActivity.java`**
+- Added `private Button btnDns;` field.
+- In `showMainScreen()`, wired `btnDns` (R.id.btn_dns) to launch `DnsActivity`.
+
+**7. `app/src/main/res/layout/activity_main.xml`**
+- Added a new `MaterialCardView` containing a `btn_dns` button ("Domain & DNS", orange #FFB74D, with `ic_menu_myplaces` drawable) immediately after the `btn_hosting` card.
+
+**8. `app/src/main/res/layout/activity_file_manager.xml`**
+- Added a new `btn_tree` Button (36×36dp, palm-tree emoji 🌴, bg_card background) right after `btn_refresh` in the top toolbar.
+
+**9. `app/src/main/java/com/bantu/droid/FileManagerActivity.java`**
+- Added `btnTree` to the button field declaration list.
+- Looked it up via `findViewById(R.id.btn_tree)` and wired `btnTree.setOnClickListener(v -> showTreeDialog())`.
+- Added a new `showTreeDialog()` method that runs `TreeRenderer` on a background thread, then displays the rendered tree in a monospace `TextView` inside a `ScrollView` inside an `AlertDialog`, with a "Copy" button that puts the tree text on the clipboard.
+
+**10. `app/src/main/java/com/bantu/droid/TerminalActivity.java`**
+- Added `private BusyboxExecutor busybox;` field.
+- Instantiated it in `onCreate()`.
+- Added `ensureBusybox()` call immediately after the "Working directory:" welcome banner.
+- In `runCommand()`'s if-else chain, added two new branches between `clear/cls` and `help`:
+  - `tree` / `tree <args>` → `handleTree(...)`.
+  - `apt`/`apt ...`/`pkg`/`pkg ...` → prints a stub message explaining why package managers don't work and pointing users to Termux.
+- Replaced the entire `runShellPassthrough(String cmd)` method: it now calls `busybox.exec(cmd, currentDir)` and pipes stdout/stderr/exit code into the terminal (instead of spawning `/system/bin/sh` directly, which is restricted on modern Android).
+- Added new `ensureBusybox()` method that, on a background thread, calls `busybox.ensureReady(...)` with a `ProgressListener` that streams download progress to the terminal.
+- Added new `handleTree(String args)` method that parses optional `-d` flag and optional path argument, resolves the target via `resolvePath`, and renders via `TreeRenderer` (dirsOnly flag honored).
+
+**11. `app/src/main/java/com/bantu/droid/TunnelActivity.java`**
+- Added `import android.content.Intent;`.
+- Added `btnTestUrl` to the SSH button declaration line.
+- Added `private android.content.BroadcastReceiver tunnelReceiver;` field.
+- Bound `btnTestUrl` via `findViewById(R.id.btn_test_url)`.
+- Added a click handler for `btnTestUrl` that grabs `TunnelService.getCurrentPublicUrl()`, ensures a trailing slash, and fires an `ACTION_VIEW` Intent to open it in the device browser.
+- Registered a `BroadcastReceiver` for actions `com.bantu.droid.TUNNEL_CONNECTED` and `com.bantu.droid.TUNNEL_DISCONNECTED` (with `RECEIVER_NOT_EXPORTED` flag). The connected handler updates the URL display, enables Stop+Test buttons, makes the URL TextView copy-to-clipboard on tap. The disconnected handler resets the UI.
+- Added a state-reflection block: if `TunnelService.isRunning()` on entry, the activity shows the running state immediately (Stop button enabled, URL shown if available).
+- Replaced `startSshTunnel()` entirely: now persists `tunnel_provider_index` and `default_port` to SharedPreferences, then calls `TunnelService.start(this, providerIdx, port)` — the foreground service handles the actual tunnel lifecycle.
+- Replaced `stopSshTunnel()` to call `TunnelService.stop(this)` and reset the three buttons (Start/Stop/Test).
+- Replaced `onDestroy()` to unregister the broadcast receiver and explicitly NOT stop the SSH/Bantu tunnel (that's the whole point of the foreground service — it survives activity destruction). Still stops the cloudflared quick tunnel.
+
+**12. `app/src/main/res/layout/activity_tunnel.xml`**
+- Renamed the SSH card title "SSH Reverse Tunnel" → "Tunnel (Bantu / SSH)".
+- Updated the card subtitle to mention Bantu first: "Create a public URL via Bantu (your self-hosted server), Serveo, localhost.run, or Pinggy."
+- Renamed "Stop SSH Tunnel" → "Stop Tunnel".
+- Added a new `btn_test_url` button ("Open Public URL in Browser", green #4CAF50, initially disabled) directly after the start/stop button row inside the SSH card.
+
+### Verification performed
+- Confirmed `BantuTunnelClient` exposes `getServerUrl()`, `getSubdomain()`, `isConfigured()`, `start(int, Callback)`, `stop()` — all called by the new `startBantuTunnel()` in TunnelManager.
+- Confirmed `TunnelService` exposes static `start(Context, int, int)`, `stop(Context)`, `isRunning()`, `getCurrentPublicUrl()` — all called from TunnelActivity.
+- Confirmed `BusyboxExecutor` exposes `isReady()`, `exec(String, File)`, `ensureReady(ProgressListener)` returning `ExecResult` with `stdout`/`stderr`/`exitCode` fields — all referenced by the rewritten `runShellPassthrough` and `ensureBusybox`.
+- Confirmed `TreeRenderer` exposes a 4-arg constructor `(File, boolean showHidden, int maxDepth, boolean dirsOnly)` and a `render()` method — used by both `FileManagerActivity.showTreeDialog()` and `TerminalActivity.handleTree()`.
+- Confirmed `colors.xml` defines all referenced colors: `bg_card`, `text_secondary`, `text_hint`, `text_primary`, `bantu_green`, `black`.
+
+### Next actions
+- Build the APK (`./gradlew assembleRelease`) to verify everything compiles.
+- On-device test: (a) Settings → enter a bantu-tunnel server URL → save → return to Tunnel activity → select "Bantu" provider → Start → verify URL appears and "Open Public URL in Browser" launches the browser with the site reachable.
+- Verify background survival: start Bantu tunnel, press Home, wait 30s, return to app — service should still be running and URL still active.
+- Verify tree button in FileManager renders a tree view of the current directory and "Copy" puts text on clipboard.
+- Verify `tree` and `apt`/`pkg` commands in Terminal behave as specified.

@@ -79,6 +79,7 @@ public class TunnelManager {
     // It is a limitation of Pinggy's free tier business model.
 
     public static final String[][] SSH_PROVIDERS = {
+        {"Bantu", "bantu-tunnel", "443", "bantu"},
         {"Serveo", "serveo.net", "443", "serveo"},
         {"localhost.run", "localhost.run", "443", "localhostrun"},
         {"Pinggy", "a.pinggy.io", "443", "pinggy"}
@@ -89,6 +90,13 @@ public class TunnelManager {
      * Index matches SSH_PROVIDERS array.
      */
     public static final String[] SSH_PROVIDER_NOTES = {
+        // Bantu
+        "Bantu is YOUR self-hosted tunnel server (github.com/bantugateway/bantu-tunnel). "
+        + "Deploy it free on Render, then enter its URL in Settings. "
+        + "URLs look like https://your-app.onrender.com/t/<id>/  (path mode) "
+        + "or https://<id>.<your-domain> (subdomain mode). "
+        + "You can request a specific subdomain via Settings.",
+
         // Serveo
         "Serveo provides direct access with no intermediate page. "
         + " URLs are assigned randomly (e.g., https://xyz.serveo.net). "
@@ -104,7 +112,7 @@ public class TunnelManager {
         + "before visitors reach your website. This is a Pinggy server-side "
         + "behavior that CANNOT be disabled through SSH options, HTTP headers, "
         + "or any client-side configuration. It is a platform limitation of "
-        + "Pinggy's free tier. To avoid this, use Serveo or localhost.run instead. "
+        + "Pinggy's free tier. To avoid this, use Bantu or Serveo instead. "
         + "The 'Enter' page is injected by Pinggy's reverse proxy before forwarding "
         + "the request to your SSH tunnel."
     };
@@ -113,6 +121,10 @@ public class TunnelManager {
     private Thread sshThread;
     private volatile boolean sshRunning = false;
     private String sshUrl;
+
+    // Bantu tunnel state (self-hosted WebSocket tunnel)
+    private BantuTunnelClient bantuClient;
+    private volatile boolean bantuRunning = false;
 
     private Process cfProcess;
     private Thread cfThread;
@@ -164,8 +176,8 @@ public class TunnelManager {
      * @param localPort the local server port to expose
      */
     public void startSshTunnel(int providerIndex, int localPort, TunnelCallback cb) {
-        if (sshRunning) {
-            cb.onError("SSH tunnel already running");
+        if (sshRunning || bantuRunning) {
+            cb.onError("A tunnel is already running");
             return;
         }
 
@@ -174,6 +186,12 @@ public class TunnelManager {
         String host = provider[1];
         int port = Integer.parseInt(provider[2]);
         String providerKey = provider[3];
+
+        // Bantu is a WebSocket-based self-hosted tunnel, not SSH — delegate.
+        if ("bantu".equals(providerKey)) {
+            startBantuTunnel(localPort, cb);
+            return;
+        }
 
         sshThread = new Thread(() -> {
             com.jcraft.jsch.Channel channel = null;
@@ -531,7 +549,50 @@ public class TunnelManager {
     public void stopSshTunnel() {
         sshRunning = false;
         disconnectSsh();
+        // Also stop a Bantu tunnel if it's running
+        if (bantuClient != null) {
+            bantuRunning = false;
+            try { bantuClient.stop(); } catch (Exception ignored) {}
+            bantuClient = null;
+        }
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Bantu Tunnel (self-hosted, WebSocket-based — like ngrok)
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Start a Bantu tunnel — connects to the user's self-hosted bantu-tunnel
+     * server (deployable on Render) over WebSocket and exposes the local port.
+     */
+    public void startBantuTunnel(int localPort, TunnelCallback cb) {
+        if (bantuRunning) {
+            cb.onError("Bantu tunnel already running");
+            return;
+        }
+        bantuClient = new BantuTunnelClient(appContext);
+        if (!bantuClient.isConfigured()) {
+            cb.onError("Bantu server URL is not configured. Open Settings and set it first.");
+            bantuClient = null;
+            return;
+        }
+
+        bantuRunning = true;
+        cb.onMessage("[Bantu] Starting tunnel to " + bantuClient.getServerUrl()
+            + " for localhost:" + localPort
+            + (bantuClient.getSubdomain().isEmpty() ? "" : " (subdomain: " + bantuClient.getSubdomain() + ")"));
+        Log.i(TAG, "[Bantu] Starting tunnel — server=" + bantuClient.getServerUrl()
+            + " port=" + localPort + " subdomain=" + bantuClient.getSubdomain());
+
+        bantuClient.start(localPort, new BantuTunnelClient.Callback() {
+            @Override public void onMessage(String msg) { cb.onMessage("[Bantu] " + msg); }
+            @Override public void onError(String err) { Log.e(TAG, "[Bantu] error: " + err); cb.onError("[Bantu] " + err); }
+            @Override public void onConnected(String publicUrl) { sshUrl = publicUrl; cb.onConnected(publicUrl); }
+            @Override public void onDisconnected() { bantuRunning = false; cb.onDisconnected(); }
+        });
+    }
+
+    public boolean isBantuRunning() { return bantuRunning; }
 
     // ──────────────────────────────────────────────────────────────
     // Cloudflare Tunnel (Quick Tunnel)

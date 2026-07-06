@@ -70,9 +70,20 @@
             android:name=".TunnelActivity"
             android:exported="false" />
 
+        <!-- DNS management -->
+        <activity
+            android:name=".DnsActivity"
+            android:exported="false" />
+
         <!-- Background server service -->
         <service
             android:name=".ServerService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- Background tunnel service — keeps WebSocket/SSH/cloudflared tunnels alive -->
+        <service
+            android:name=".TunnelService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 

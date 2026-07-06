@@ -183,6 +183,78 @@
             android:textColor="@color/black"
             android:layout_marginBottom="24dp" />
 
+        <!-- Bantu Tunnel Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BANTU TUNNEL (self-hosted)"
+            android:textColor="@color/bantu_green"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Deploy your own bantu-tunnel server on Render (free), then paste its URL here."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/et_bantu_server_url"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@color/bg_card"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:hint="Server URL (https://your-app.onrender.com)"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:inputType="textUri"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/et_bantu_subdomain"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@color/bg_card"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:hint="Subdomain (optional, e.g. myapp)"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:inputType="textUri"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/et_bantu_token"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@color/bg_card"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:hint="Auth token (optional, only if server requires)"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:inputType="textPassword"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_save_bantu"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Save Bantu Tunnel Settings"
+            android:backgroundTint="@color/bantu_green"
+            android:textColor="@color/black"
+            android:layout_marginBottom="24dp" />
+
         <!-- About Section -->
         <TextView
             android:layout_width="wrap_content"

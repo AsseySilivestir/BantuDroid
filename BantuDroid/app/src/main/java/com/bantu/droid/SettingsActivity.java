@@ -25,6 +25,12 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText etDdnsDomain;
     private EditText etDdnsToken;
     private Button btnSaveDdns;
+
+    // Bantu tunnel settings (self-hosted bantu-tunnel server on Render)
+    private EditText etBantuServerUrl;
+    private EditText etBantuSubdomain;
+    private EditText etBantuToken;
+    private Button btnSaveBantu;
     private TextView tvAbout;
 
     @Override
@@ -41,6 +47,11 @@ public class SettingsActivity extends AppCompatActivity {
         etDdnsDomain = findViewById(R.id.et_ddns_domain);
         etDdnsToken = findViewById(R.id.et_ddns_token);
         btnSaveDdns = findViewById(R.id.btn_save_ddns);
+        // Bantu tunnel settings
+        etBantuServerUrl = findViewById(R.id.et_bantu_server_url);
+        etBantuSubdomain = findViewById(R.id.et_bantu_subdomain);
+        etBantuToken     = findViewById(R.id.et_bantu_token);
+        btnSaveBantu     = findViewById(R.id.btn_save_bantu);
         tvAbout = findViewById(R.id.tv_about);
 
         // Load current values
@@ -57,6 +68,10 @@ public class SettingsActivity extends AppCompatActivity {
             prefs.getString("ddns_domain", ""));
         etDdnsToken.setText(
             prefs.getString("ddns_token", ""));
+        // Bantu tunnel settings
+        etBantuServerUrl.setText(prefs.getString("bantu_server_url", ""));
+        etBantuSubdomain.setText(prefs.getString("bantu_subdomain", ""));
+        etBantuToken.setText(prefs.getString("bantu_token", ""));
 
         tvAbout.setText(
             "BantuDroid v1.0.0\n" +
@@ -98,6 +113,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Save settings
         btnSaveDdns.setOnClickListener(v -> saveSettings());
+        btnSaveBantu.setOnClickListener(v -> saveBantuSettings());
 
         // Save on switch toggle
         switchAutostart.setOnCheckedChangeListener((buttonView, isChecked) -> saveSettings());
@@ -117,5 +133,27 @@ public class SettingsActivity extends AppCompatActivity {
         } catch (NumberFormatException e) {
             Toast.makeText(this, "Invalid port number", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * Save Bantu tunnel settings (server URL, subdomain, token).
+     */
+    private void saveBantuSettings() {
+        String serverUrl = etBantuServerUrl.getText().toString().trim();
+        String subdomain = etBantuSubdomain.getText().toString().trim();
+        String token     = etBantuToken.getText().toString().trim();
+
+        if (!serverUrl.isEmpty()) {
+            while (serverUrl.endsWith("/")) serverUrl = serverUrl.substring(0, serverUrl.length() - 1);
+            if (serverUrl.endsWith("/ws")) serverUrl = serverUrl.substring(0, serverUrl.length() - 3);
+        }
+
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString("bantu_server_url", serverUrl)
+            .putString("bantu_subdomain", subdomain)
+            .putString("bantu_token", token)
+            .apply();
+
+        Toast.makeText(this, "Bantu tunnel settings saved", Toast.LENGTH_SHORT).show();
     }
 }

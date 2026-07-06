@@ -59,6 +59,7 @@ public class TerminalActivity extends AppCompatActivity
     private BantuProcess currentProcess;
     private StringBuilder outputBuffer;
     private CommandHistory commandHistory;
+    private BusyboxExecutor busybox;
 
     // Current Working Directory — starts at workspace root
     private File currentDir;
@@ -71,6 +72,7 @@ public class TerminalActivity extends AppCompatActivity
         engine = new BantuEngine(this);
         outputBuffer = new StringBuilder();
         commandHistory = new CommandHistory();
+        busybox = new BusyboxExecutor(this);
 
         // Start CWD at the Bantu workspace root
         currentDir = engine.getWorkspaceRoot();
@@ -90,6 +92,8 @@ public class TerminalActivity extends AppCompatActivity
         // Welcome
         appendOutput(getString(R.string.terminal_welcome));
         appendOutput("Working directory: " + currentDir.getAbsolutePath() + "\n\n");
+        // Ensure busybox is available — downloads on first run (~2MB)
+        ensureBusybox();
 
         // Ensure engine is installed
         if (!engine.isInstalled()) {
@@ -241,6 +245,15 @@ public class TerminalActivity extends AppCompatActivity
             } else if (cmd.equals("clear") || cmd.equals("cls")) {
                 outputBuffer.setLength(0);
                 terminalOutput.setText("");
+
+            // tree command — pure-Java implementation, no busybox needed
+            } else if (cmd.equals("tree") || cmd.startsWith("tree ")) {
+                handleTree(cmd.substring(4).trim());
+
+            // apt / pkg — no-op stubs explaining why they don't work
+            } else if (cmd.startsWith("apt ") || cmd.equals("apt")
+                       || cmd.startsWith("pkg ") || cmd.equals("pkg")) {
+                appendOutput("apt/pkg are not available. BantuDroid bundles busybox which provides\ncurl, wget, tree, grep, sed, awk, find, and 300+ other utilities.\nFor a full package manager, install Termux from F-Droid.\n\n");
 
             } else if (cmd.equals("help")) {
                 showHelp();
@@ -509,24 +522,63 @@ public class TerminalActivity extends AppCompatActivity
     // ──────────────────────────────────────────────────────────────
 
     private void runShellPassthrough(String cmd) {
+        if (!busybox.isReady()) {
+            ensureBusybox();
+        }
         try {
-            ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", cmd);
-            pb.directory(currentDir);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                appendOutput(line + "\n");
+            BusyboxExecutor.ExecResult result = busybox.exec(cmd, currentDir);
+            if (!result.stdout.isEmpty()) appendOutput(result.stdout);
+            if (!result.stderr.isEmpty()) appendOutput(result.stderr);
+            if (result.exitCode != 0 && result.exitCode != -1) {
+                appendOutput("Exit code: " + result.exitCode + "\n");
             }
-            int exitCode = process.waitFor();
-            if (exitCode != 0) appendOutput("Exit code: " + exitCode + "\n");
             appendOutput("\n");
         } catch (Exception e) {
             appendOutput("sh: " + e.getMessage() + "\n\n");
         }
+    }
+
+    private void ensureBusybox() {
+        if (busybox.isReady()) return;
+        new Thread(() -> {
+            busybox.ensureReady(new BusyboxExecutor.ProgressListener() {
+                @Override public void onProgress(int percent) {
+                    runOnUiThread(() -> appendOutput("\rDownloading busybox... " + percent + "%"));
+                }
+                @Override public void onMessage(String msg) {
+                    runOnUiThread(() -> appendOutput(msg + "\n"));
+                }
+                @Override public void onError(String err) {
+                    runOnUiThread(() -> appendOutput("busybox: " + err + "\n"));
+                }
+            });
+            if (busybox.isReady()) {
+                runOnUiThread(() -> appendOutput("\nbusybox ready — curl, wget, tree, grep, etc. now available.\n\n"));
+            }
+        }).start();
+    }
+
+    private void handleTree(String args) {
+        boolean dirsOnly = false;
+        String path = null;
+        if (args != null && !args.isEmpty()) {
+            String[] parts = args.split("\\s+");
+            for (String p : parts) {
+                if (p.equals("-d")) dirsOnly = true;
+                else if (!p.startsWith("-")) path = p;
+            }
+        }
+        File target = (path != null) ? resolvePath(path) : currentDir;
+        if (!target.exists()) {
+            appendOutput("tree: " + path + ": No such file or directory\n\n");
+            return;
+        }
+        if (target.isFile()) {
+            appendOutput(target.getAbsolutePath() + "\n\n0 directories, 1 file\n\n");
+            return;
+        }
+        TreeRenderer renderer = new TreeRenderer(target, false, 10, dirsOnly);
+        appendOutput(renderer.render() + "\n");
     }
 
     // ──────────────────────────────────────────────────────────────

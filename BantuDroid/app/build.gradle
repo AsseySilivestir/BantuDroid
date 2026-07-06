@@ -11,8 +11,8 @@ android {
         applicationId "com.bantu.droid"
         minSdk 24
         targetSdk 34
-        versionCode 293
-        versionName "2.9.3"
+        versionCode 296
+        versionName "2.10.1"
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -95,6 +95,8 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.9.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'com.github.mwiede:jsch:0.2.16'
+    // OkHttp — used by BantuTunnelClient for WebSocket connection to bantu-tunnel server
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

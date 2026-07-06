@@ -31,6 +31,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnFiles;
     private Button btnDashboard;
     private Button btnHosting;
+    private Button btnDns;
     private Button btnSettings;
     private TextView tvEngineStatus;
 
@@ -122,6 +123,10 @@ public class MainActivity extends AppCompatActivity {
 
         btnHosting.setOnClickListener(v ->
             startActivity(new Intent(this, TunnelActivity.class)));
+
+        btnDns = findViewById(R.id.btn_dns);
+        btnDns.setOnClickListener(v ->
+            startActivity(new Intent(this, DnsActivity.class)));
 
         btnSettings.setOnClickListener(v ->
             startActivity(new Intent(this, SettingsActivity.class)));
