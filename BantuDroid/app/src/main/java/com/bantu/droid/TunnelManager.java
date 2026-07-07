@@ -594,6 +594,25 @@ public class TunnelManager {
 
     public boolean isBantuRunning() { return bantuRunning; }
 
+    /** Bind a custom domain to the active Bantu tunnel (passes through to BantuTunnelClient). */
+    public void bindBantuDomain(String domain) {
+        if (bantuClient != null && bantuClient.isRunning()) {
+            bantuClient.bindDomain(domain);
+            bantuClient.setAutoRebindDomain(domain);
+        }
+    }
+
+    public void unbindBantuDomain(String domain) {
+        if (bantuClient != null) {
+            bantuClient.unbindDomain(domain);
+            bantuClient.setAutoRebindDomain("");
+        }
+    }
+
+    public boolean isBantuConnected() {
+        return bantuClient != null && bantuClient.isRunning();
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Cloudflare Tunnel (Quick Tunnel)
     // ──────────────────────────────────────────────────────────────

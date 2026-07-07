@@ -180,6 +180,27 @@ public class TunnelService extends Service {
     public static boolean isRunning() { return instance != null && instance.tunnelActive; }
     public static String getCurrentPublicUrl() { return instance != null ? instance.currentPublicUrl : null; }
 
+    /** Bind a custom domain to the active Bantu tunnel (call from any activity). */
+    public static boolean bindDomain(String domain) {
+        if (instance != null && instance.tunnelMgr != null && instance.tunnelMgr.isBantuConnected()) {
+            instance.tunnelMgr.bindBantuDomain(domain);
+            return true;
+        }
+        return false;
+    }
+
+    /** Check if a Bantu tunnel is currently connected (for the DNS screen to enable Bind). */
+    public static boolean isBantuConnected() {
+        return instance != null && instance.tunnelMgr != null && instance.tunnelMgr.isBantuConnected();
+    }
+
+    /** Unbind a previously-bound custom domain. */
+    public static void unbindDomainStatic(String domain) {
+        if (instance != null && instance.tunnelMgr != null) {
+            instance.tunnelMgr.unbindBantuDomain(domain);
+        }
+    }
+
     @Override public void onDestroy() {
         stopTunnel();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();

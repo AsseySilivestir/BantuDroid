@@ -14,7 +14,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="\uD83C\uDF10 DOMAIN DNS SETUP"
+            android:text="CUSTOM DOMAIN"
             android:textColor="@color/bantu_green"
             android:textSize="22sp"
             android:fontFamily="monospace"
@@ -24,11 +24,12 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Configure DNS for a domain bought at Wazohost (or any registrar). Routes the domain at your Bantu tunnel server."
+            android:text="Wire a domain (e.g. splannes.co.tz) directly to your tunnel. No Cloudflare needed — uses your existing Render + registrar."
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:layout_marginBottom="16dp" />
 
+        <!-- Instructions -->
         <TextView
             android:id="@+id/tv_instructions"
             android:layout_width="match_parent"
@@ -36,16 +37,16 @@
             android:background="@color/bg_card"
             android:padding="12dp"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:fontFamily="monospace"
             android:lineSpacingExtra="3dp"
-            android:layout_marginBottom="16dp"
-            android:text="Setup steps:\n\n1. Buy domain at Wazohost (e.g. splannes.co.tz)\n2. In Wazohost panel, change nameservers to Cloudflare's two NS\n3. In Cloudflare dashboard: Add Site -> enter domain -> Free plan\n4. Get API token: My Profile -> API Tokens -> Create Token -> Edit zone DNS\n5. Paste domain + token below, tap Auto-detect Zone ID\n6. Create record (A/AAAA/CNAME), or tap Wire to Bantu Tunnel for one-click" />
+            android:layout_marginBottom="16dp" />
 
+        <!-- Domain input -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Domain name"
+            android:text="Your domain"
             android:textColor="@color/bantu_green"
             android:textSize="13sp"
             android:fontFamily="monospace"
@@ -66,131 +67,51 @@
             android:inputType="textUri"
             android:layout_marginBottom="12dp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Cloudflare API token"
-            android:textColor="@color/bantu_green"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:layout_marginBottom="4dp" />
-
-        <EditText
-            android:id="@+id/et_cf_api_token"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:background="@color/bg_card"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_hint"
-            android:hint="v1.0-xxxxx..."
-            android:textSize="14sp"
-            android:fontFamily="monospace"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:inputType="textPassword"
-            android:layout_marginBottom="12dp" />
-
+        <!-- Action buttons -->
         <Button
-            android:id="@+id/btn_auto_zone"
+            android:id="@+id/btn_bind"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:text="Auto-detect Zone ID"
+            android:layout_height="48dp"
+            android:text="Bind Domain to Tunnel"
+            android:textSize="14sp"
             android:backgroundTint="@color/bantu_green"
             android:textColor="@color/black"
-            android:layout_marginBottom="16dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/bg_card"
-            android:layout_marginBottom="16dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Record type"
-            android:textColor="@color/bantu_green"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:layout_marginBottom="4dp" />
-
-        <RadioGroup
-            android:id="@+id/rg_record_type"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
-            <RadioButton android:id="@+id/rb_type_a" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="A" android:textColor="@color/text_primary" android:checked="false" />
-            <RadioButton android:id="@+id/rb_type_aaaa" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="AAAA" android:textColor="@color/text_primary" android:checked="false" />
-            <RadioButton android:id="@+id/rb_type_cname" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="CNAME" android:textColor="@color/text_primary" android:checked="true" />
-        </RadioGroup>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Record name (@ for apex)"
-            android:textColor="@color/bantu_green"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:layout_marginBottom="4dp" />
-
-        <EditText
-            android:id="@+id/et_record_name"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:background="@color/bg_card"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_hint"
-            android:hint="@"
-            android:textSize="14sp"
-            android:fontFamily="monospace"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:inputType="textUri"
-            android:layout_marginBottom="12dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Value (IP for A/AAAA, hostname for CNAME)"
-            android:textColor="@color/bantu_green"
-            android:textSize="13sp"
-            android:fontFamily="monospace"
-            android:layout_marginBottom="4dp" />
-
-        <EditText
-            android:id="@+id/et_record_value"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:background="@color/bg_card"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_hint"
-            android:hint="bantu-tunnel-xxxx.onrender.com"
-            android:textSize="14sp"
-            android:fontFamily="monospace"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:inputType="textUri"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
 
         <Button
-            android:id="@+id/btn_create_record"
+            android:id="@+id/btn_unbind"
             android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:text="Create DNS Record"
-            android:backgroundTint="@color/bantu_green"
+            android:text="Unbind Domain"
+            android:textSize="13sp"
+            android:backgroundTint="@color/bg_card"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
+            android:id="@+id/btn_open_browser"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Open in Browser"
+            android:textSize="13sp"
+            android:backgroundTint="#4CAF50"
             android:textColor="@color/black"
             android:layout_marginBottom="8dp" />
 
         <Button
-            android:id="@+id/btn_bantu_cname"
+            android:id="@+id/btn_start_tunnel_first"
             android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:text="Wire to Bantu Tunnel (one click)"
+            android:text="Start Bantu Tunnel First"
+            android:textSize="13sp"
             android:backgroundTint="#FFB74D"
             android:textColor="@color/black"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="16dp"
+            android:visibility="gone" />
 
+        <!-- Status -->
         <TextView
             android:id="@+id/tv_status"
             android:layout_width="match_parent"
@@ -201,6 +122,7 @@
             android:fontFamily="monospace"
             android:layout_marginBottom="12dp" />
 
+        <!-- Log -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

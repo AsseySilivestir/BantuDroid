@@ -244,6 +244,59 @@ public class BantuTunnelClient {
         } catch (Exception e) {}
     }
 
+    /**
+     * Bind a custom domain (e.g. splannes.co.tz) to this tunnel.
+     * After the server acknowledges, requests to https://splannes.co.tz
+     * will route to this tunnel's local port.
+     *
+     * Prerequisites (the user does these manually, one-time):
+     *   1. Add the custom domain in Render dashboard (for HTTPS cert)
+     *   2. Add a CNAME record at the domain's registrar (e.g. Wazohost)
+     *      pointing the domain at the bantu-tunnel Render service
+     *
+     * The server-side mapping is wiped when the tunnel disconnects, so
+     * this needs to be re-sent after each reconnect. Use autoRebindDomain()
+     * to make it sticky.
+     */
+    public void bindDomain(String domain) {
+        if (ws == null || !connected) {
+            if (callback != null) callback.onError("Cannot bind domain — tunnel not connected");
+            return;
+        }
+        try {
+            JSONObject msg = new JSONObject();
+            msg.put("type", "bind-domain");
+            msg.put("domain", domain.trim().toLowerCase());
+            ws.send(msg.toString());
+            Log.i(TAG, "[Bantu] bind-domain sent: " + domain);
+        } catch (Exception e) {
+            if (callback != null) callback.onError("bind-domain error: " + e.getMessage());
+        }
+    }
+
+    /** Unbind a previously-bound custom domain. */
+    public void unbindDomain(String domain) {
+        if (ws == null || !connected) return;
+        try {
+            JSONObject msg = new JSONObject();
+            msg.put("type", "unbind-domain");
+            msg.put("domain", domain.trim().toLowerCase());
+            ws.send(msg.toString());
+        } catch (Exception e) {}
+    }
+
+    /** Persist a domain so it auto-rebinds after each reconnect. */
+    public void setAutoRebindDomain(String domain) {
+        PreferenceManager.getDefaultSharedPreferences(appContext).edit()
+            .putString("bantu_auto_domain", domain == null ? "" : domain.trim().toLowerCase())
+            .apply();
+    }
+
+    public String getAutoRebindDomain() {
+        return PreferenceManager.getDefaultSharedPreferences(appContext)
+            .getString("bantu_auto_domain", "");
+    }
+
     static String buildWebSocketUrl(String serverUrl, String subdomain, String token) {
         if (serverUrl == null) return null;
         String s = serverUrl.trim();
@@ -294,10 +347,32 @@ public class BantuTunnelClient {
                         post(msg("Reconnected \u2014 same URL: " + publicUrl));
                     }
                     post(() -> { if (callback != null) callback.onConnected(publicUrl); });
+
+                    // Auto-rebind a previously-bound custom domain after reconnect
+                    final String autoDomain = getAutoRebindDomain();
+                    if (autoDomain != null && !autoDomain.isEmpty()) {
+                        post(msg("Auto-rebinding custom domain: " + autoDomain));
+                        // Small delay to let server finish registering the tunnel
+                        reconnectHandler.postDelayed(() -> bindDomain(autoDomain), 500);
+                    }
                     break;
                 }
                 case "request": handleRequest(msg); break;
                 case "pong": break;
+                case "domain-bound": {
+                    final String domain = msg.optString("domain", "");
+                    final String url = msg.optString("url", "");
+                    final String serverMsg = msg.optString("message", "");
+                    post(msg("Domain bound: " + domain));
+                    post(msg("Live URL: " + url));
+                    if (!serverMsg.isEmpty()) post(msg(serverMsg));
+                    break;
+                }
+                case "domain-unbound": {
+                    final String domain = msg.optString("domain", "");
+                    post(msg("Domain unbound: " + domain));
+                    break;
+                }
                 case "error": {
                     final String serverMsg = msg.optString("message", "unknown error");
                     post(msg("Server error: " + serverMsg));
