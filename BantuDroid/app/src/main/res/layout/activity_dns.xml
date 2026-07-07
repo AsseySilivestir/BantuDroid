@@ -91,6 +91,17 @@
             android:enabled="false" />
 
         <Button
+            android:id="@+id/btn_list_domains"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="List All Domains on Render (diagnostic)"
+            android:textSize="12sp"
+            android:backgroundTint="@color/bg_card"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
             android:id="@+id/btn_bind"
             android:layout_width="match_parent"
             android:layout_height="48dp"

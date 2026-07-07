@@ -11,8 +11,8 @@ android {
         applicationId "com.bantu.droid"
         minSdk 24
         targetSdk 34
-        versionCode 299
-        versionName "2.12.1"
+        versionCode 300
+        versionName "2.12.2"
 
         ndk {
             abiFilters 'arm64-v8a'

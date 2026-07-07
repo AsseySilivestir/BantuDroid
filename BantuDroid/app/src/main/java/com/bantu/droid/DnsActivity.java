@@ -36,7 +36,7 @@ import androidx.preference.PreferenceManager;
 public class DnsActivity extends AppCompatActivity {
 
     private EditText etDomain;
-    private Button btnAddToRender, btnCheckStatus, btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
+    private Button btnAddToRender, btnCheckStatus, btnListDomains, btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
     private TextView tvStatus, tvInstructions, tvLog;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -48,6 +48,7 @@ public class DnsActivity extends AppCompatActivity {
         etDomain = findViewById(R.id.et_domain);
         btnAddToRender = findViewById(R.id.btn_add_to_render);
         btnCheckStatus = findViewById(R.id.btn_check_status);
+        btnListDomains = findViewById(R.id.btn_list_domains);
         btnBind = findViewById(R.id.btn_bind);
         btnUnbind = findViewById(R.id.btn_unbind);
         btnOpenInBrowser = findViewById(R.id.btn_open_browser);
@@ -72,6 +73,7 @@ public class DnsActivity extends AppCompatActivity {
 
         btnAddToRender.setOnClickListener(v -> addDomainToRender());
         btnCheckStatus.setOnClickListener(v -> checkDomainStatus());
+        btnListDomains.setOnClickListener(v -> listDomainsOnRender());
         btnBind.setOnClickListener(v -> bindDomain());
         btnUnbind.setOnClickListener(v -> unbindDomain());
         btnOpenInBrowser.setOnClickListener(v -> openInBrowser());
@@ -96,20 +98,24 @@ public class DnsActivity extends AppCompatActivity {
 
         btnAddToRender.setEnabled(hasRender);
         btnCheckStatus.setEnabled(hasRender);
+        btnListDomains.setEnabled(hasRender);
         btnBind.setEnabled(connected);
         btnUnbind.setEnabled(connected);
+
+        String serviceName = prefs().getString("render_service_name", "");
+        String serviceId = prefs().getString("render_service_id", "");
 
         if (!hasRender) {
             tvStatus.setText("Add your Render API key in Settings first to enable automatic domain setup.");
             btnStartTunnelFirst.setVisibility(View.GONE);
         } else if (connected) {
-            tvStatus.setText("Tunnel active. Add domain to Render, then bind.");
+            tvStatus.setText("Render service: " + serviceName + "\nTunnel: ACTIVE\nReady to add domain.");
             btnStartTunnelFirst.setVisibility(View.GONE);
         } else if (running) {
-            tvStatus.setText("Tunnel is connecting... please wait.");
+            tvStatus.setText("Render service: " + serviceName + "\nTunnel is connecting...");
             btnStartTunnelFirst.setVisibility(View.GONE);
         } else {
-            tvStatus.setText("No active Bantu tunnel. Start one first (or add domain anyway).");
+            tvStatus.setText("Render service: " + serviceName + "\nNo active tunnel (you can still add the domain).");
             btnStartTunnelFirst.setVisibility(View.VISIBLE);
         }
     }
@@ -199,6 +205,34 @@ public class DnsActivity extends AppCompatActivity {
             @Override public void onError(String error) {
                 runOnUiThread(() -> {
                     btnAddToRender.setEnabled(true);
+                    log("ERROR: " + error);
+                    setStatus("Failed: " + error);
+                });
+            }
+        });
+    }
+
+    /** Diagnostic: list all custom domains currently on the Render service. */
+    private void listDomainsOnRender() {
+        final String apiKey = prefs().getString("render_api_key", "");
+        final String serviceId = prefs().getString("render_service_id", "");
+        if (apiKey.isEmpty() || serviceId.isEmpty()) return;
+
+        log("Listing custom domains on Render service " + serviceId + "...");
+        setStatus("Querying Render...");
+        btnListDomains.setEnabled(false);
+
+        RenderApi.listCustomDomains(apiKey, serviceId, new RenderApi.Callback() {
+            @Override public void onSuccess(String message) {
+                runOnUiThread(() -> {
+                    btnListDomains.setEnabled(true);
+                    log(message);
+                    setStatus(message.split("\n")[0]);
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    btnListDomains.setEnabled(true);
                     log("ERROR: " + error);
                     setStatus("Failed: " + error);
                 });

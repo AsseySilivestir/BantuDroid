@@ -43,6 +43,12 @@ public class RenderApi {
         void onError(String error);
     }
 
+    /** Callback that includes the raw HTTP status code for diagnostics. */
+    public interface VerboseCallback {
+        void onSuccess(int httpStatus, String message);
+        void onError(int httpStatus, String error);
+    }
+
     public interface ServiceCallback {
         void onServiceFound(String serviceId, String serviceName);
         void onError(String error);
@@ -150,6 +156,10 @@ public class RenderApi {
     /**
      * Add a custom domain to a Render service.
      * Render starts provisioning SSL automatically (takes ~1-2 min).
+     *
+     * IMPORTANT: After the POST, we immediately call listCustomDomains()
+     * to VERIFY the domain was actually added. This catches the bug where
+     * Render returns an empty response body and we falsely report success.
      */
     public static void addCustomDomain(String apiKey, String serviceId,
                                          String domain, Callback cb) {
@@ -158,34 +168,99 @@ public class RenderApi {
                 JSONObject body = new JSONObject();
                 body.put("customDomain", domain.trim().toLowerCase());
 
-                String response = apiRequest("POST",
+                // Make the POST — capture both status and body
+                HttpResult result = apiRequestVerbose("POST",
                     API_BASE + "/services/" + serviceId + "/custom-domains",
                     apiKey, body.toString());
 
-                if (response == null) {
-                    // 204 No Content sometimes — treat as success
-                    cb.onSuccess("Domain added to Render.");
+                Log.i(TAG, "addCustomDomain HTTP " + result.status + " body=" + result.body);
+
+                // Render returns 201 Created on success, with the created resource as JSON.
+                // 200 = already exists (some APIs do this)
+                // 204 = success, no body
+                // 400/401/403/404 = error
+                if (result.status >= 400) {
+                    String errMsg = extractErrorMessage(result.body, result.status);
+                    cb.onError("HTTP " + result.status + ": " + errMsg);
                     return;
                 }
 
-                // Response is a single object (not array) — the created domain resource
-                JSONObject json = new JSONObject(response);
-                String sslStatus = json.optString("sslStatus", "pending");
-                String verificationStatus = json.optString("verificationStatus", "pending");
+                // Now VERIFY by listing domains — don't trust the POST alone
+                Thread.sleep(500);  // give Render a moment to commit
+                HttpResult listResult = apiRequestVerbose("GET",
+                    API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
+                    apiKey, null);
 
-                Log.i(TAG, "Custom domain added: " + domain + " (ssl=" + sslStatus + ", verification=" + verificationStatus + ")");
-                cb.onSuccess("Domain added to Render. SSL provisioning: " + sslStatus
-                    + ". Add the CNAME at your registrar now.");
+                JSONArray domains = parseArray(listResult.body);
+                String lowerDomain = domain.trim().toLowerCase();
+                boolean found = false;
+                if (domains != null) {
+                    for (int i = 0; i < domains.length(); i++) {
+                        JSONObject d = domains.getJSONObject(i);
+                        if (d.optString("customDomain", "").toLowerCase().equals(lowerDomain)) {
+                            found = true;
+                            String ssl = d.optString("sslStatus", "pending");
+                            Log.i(TAG, "Verified: domain is on Render (ssl=" + ssl + ")");
+                            cb.onSuccess("Domain verified on Render. SSL status: " + ssl
+                                + ". Add the CNAME at Wazohost, then check status.");
+                            return;
+                        }
+                    }
+                }
+
+                // POST returned 2xx but domain isn't in the list — Render silently rejected it
+                cb.onError("Render accepted the request (HTTP " + result.status
+                    + ") but the domain is NOT in the domain list. "
+                    + "This usually means your API key lacks Write scope, or the service ID is wrong. "
+                    + "Check your API key has 'Write' permissions at dashboard.render.com/users/me/api-keys");
             } catch (RenderApiException e) {
-                // Check for "already exists" — that's not a fatal error
                 String msg = e.getMessage();
                 if (msg != null && msg.toLowerCase().contains("already")) {
-                    cb.onSuccess("Domain already added to Render (this is OK)");
+                    cb.onSuccess("Domain already added to Render (verified)");
                 } else {
                     cb.onError(msg != null ? msg : "API error");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "addCustomDomain error", e);
+                cb.onError("Failed: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    /**
+     * List all custom domains on a service — used for diagnostics and verification.
+     */
+    public static void listCustomDomains(String apiKey, String serviceId, Callback cb) {
+        new Thread(() -> {
+            try {
+                HttpResult result = apiRequestVerbose("GET",
+                    API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
+                    apiKey, null);
+
+                if (result.status >= 400) {
+                    cb.onError("HTTP " + result.status + ": " + extractErrorMessage(result.body, result.status));
+                    return;
+                }
+
+                JSONArray domains = parseArray(result.body);
+                if (domains == null || domains.length() == 0) {
+                    cb.onSuccess("No custom domains on this service yet.");
+                    return;
+                }
+
+                StringBuilder sb = new StringBuilder();
+                sb.append(domains.length()).append(" custom domain(s) on this service:\n");
+                for (int i = 0; i < domains.length(); i++) {
+                    JSONObject d = domains.getJSONObject(i);
+                    String name = d.optString("customDomain", "?");
+                    String ssl = d.optString("sslStatus", "?");
+                    String verif = d.optString("verificationStatus", "?");
+                    sb.append("  - ").append(name)
+                      .append(" (ssl=").append(ssl)
+                      .append(", verification=").append(verif).append(")\n");
+                }
+                cb.onSuccess(sb.toString().trim());
+            } catch (Exception e) {
                 cb.onError("Failed: " + e.getMessage());
             }
         }).start();
@@ -281,10 +356,41 @@ public class RenderApi {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Low-level HTTP helper
+    // Low-level HTTP helpers
     // ──────────────────────────────────────────────────────────────
 
-    private static String apiRequest(String method, String urlStr, String apiKey, String body) throws Exception {
+    /** Holds both the HTTP status code and response body for diagnostics. */
+    private static class HttpResult {
+        int status;
+        String body;
+        HttpResult(int s, String b) { status = s; body = b; }
+    }
+
+    /** Extract a human-readable error message from a Render error response. */
+    private static String extractErrorMessage(String body, int defaultStatus) {
+        if (body == null || body.trim().isEmpty()) return "HTTP " + defaultStatus;
+        try {
+            String trimmed = body.trim();
+            if (trimmed.startsWith("{")) {
+                JSONObject errJson = new JSONObject(trimmed);
+                JSONArray errors = errJson.optJSONArray("errors");
+                if (errors != null && errors.length() > 0) {
+                    return errors.getJSONObject(0).optString("message", "HTTP " + defaultStatus);
+                }
+                String msg = errJson.optString("message", null);
+                if (msg != null) return msg;
+            } else if (trimmed.startsWith("[")) {
+                JSONArray errArr = new JSONArray(trimmed);
+                if (errArr.length() > 0) {
+                    return errArr.getJSONObject(0).optString("message", "HTTP " + defaultStatus);
+                }
+            }
+        } catch (Exception ignored) {}
+        return body.length() > 200 ? body.substring(0, 200) : body;
+    }
+
+    /** Verbose version of apiRequest that returns both status and body. */
+    private static HttpResult apiRequestVerbose(String method, String urlStr, String apiKey, String body) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
@@ -301,44 +407,29 @@ public class RenderApi {
                 }
             }
             int status = conn.getResponseCode();
-            java.io.InputStream is;
-            if (status >= 200 && status < 300) {
-                is = conn.getInputStream();
-            } else {
-                is = conn.getErrorStream();
+            java.io.InputStream is = (status >= 200 && status < 300) ? conn.getInputStream() : conn.getErrorStream();
+            String responseBody = "";
+            if (is != null) {
+                BufferedReader r = new BufferedReader(new InputStreamReader(is));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line);
+                responseBody = sb.toString();
             }
-            if (is == null) return null;
-            BufferedReader r = new BufferedReader(new InputStreamReader(is));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = r.readLine()) != null) sb.append(line);
-            String response = sb.toString();
-            if (status < 200 || status >= 300) {
-                // Try to extract a useful error message from JSON
-                String errMsg = "HTTP " + status;
-                try {
-                    // Response might be an object with "message" or "errors"
-                    if (response.trim().startsWith("{")) {
-                        JSONObject errJson = new JSONObject(response);
-                        JSONArray errors = errJson.optJSONArray("errors");
-                        if (errors != null && errors.length() > 0) {
-                            errMsg = errors.getJSONObject(0).optString("message", errMsg);
-                        } else {
-                            errMsg = errJson.optString("message", errMsg);
-                        }
-                    } else if (response.trim().startsWith("[")) {
-                        JSONArray errArr = new JSONArray(response);
-                        if (errArr.length() > 0) {
-                            errMsg = errArr.getJSONObject(0).optString("message", errMsg);
-                        }
-                    }
-                } catch (Exception ignored) {}
-                throw new RenderApiException(errMsg);
-            }
-            return response.isEmpty() ? null : response;
+            Log.d(TAG, method + " " + urlStr + " -> HTTP " + status + " (" + responseBody.length() + " bytes)");
+            return new HttpResult(status, responseBody);
         } finally {
             conn.disconnect();
         }
+    }
+
+    /** Original apiRequest kept for backwards-compat — delegates to apiRequestVerbose. */
+    private static String apiRequest(String method, String urlStr, String apiKey, String body) throws Exception {
+        HttpResult result = apiRequestVerbose(method, urlStr, apiKey, body);
+        if (result.status < 200 || result.status >= 300) {
+            throw new RenderApiException(extractErrorMessage(result.body, result.status));
+        }
+        return result.body.isEmpty() ? null : result.body;
     }
 
     private static class RenderApiException extends Exception {
