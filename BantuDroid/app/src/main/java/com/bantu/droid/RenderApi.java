@@ -100,22 +100,40 @@ public class RenderApi {
     /**
      * Find a service by name (e.g. "bantu-tunnel"). Iterates through paginated
      * service list looking for a name match (case-insensitive, partial).
+     * Logs every service found for diagnostics.
      */
     public static void findServiceByName(String apiKey, String nameQuery, ServiceCallback cb) {
         new Thread(() -> {
             try {
                 // GET /v1/services?limit=100  — returns bare array
-                String response = apiRequest("GET",
+                HttpResult result = apiRequestVerbose("GET",
                     API_BASE + "/services?limit=100",
                     apiKey, null);
-                if (response == null) {
-                    cb.onError("No response from Render API. Check your API key.");
+
+                Log.i(TAG, "findServiceByName HTTP " + result.status + " bodyLen=" + result.body.length());
+
+                if (result.status >= 400) {
+                    String errMsg = extractErrorMessage(result.body, result.status);
+                    Log.e(TAG, "API error: " + errMsg);
+                    cb.onError("HTTP " + result.status + ": " + errMsg
+                        + (result.status == 401 ? " (API key invalid or missing Read scope)" : ""));
                     return;
                 }
 
-                JSONArray services = parseArray(response);
-                if (services == null || services.length() == 0) {
-                    cb.onError("No Render services found on your account. Make sure your API key has access.");
+                if (result.body == null || result.body.trim().isEmpty()) {
+                    cb.onError("Render returned an empty response. Check your API key.");
+                    return;
+                }
+
+                JSONArray services = parseArray(result.body);
+                if (services == null) {
+                    cb.onError("Could not parse Render response: "
+                        + result.body.substring(0, Math.min(200, result.body.length())));
+                    return;
+                }
+                if (services.length() == 0) {
+                    cb.onError("No Render services found on your account. "
+                        + "Make sure your API key has Read access.");
                     return;
                 }
 
@@ -123,27 +141,45 @@ public class RenderApi {
 
                 // Find a service whose name contains the query (case-insensitive)
                 String lowerQuery = nameQuery.toLowerCase();
+                JSONObject matched = null;
                 for (int i = 0; i < services.length(); i++) {
                     JSONObject svc = services.getJSONObject(i);
                     String svcName = svc.optString("name", "");
                     String svcId = svc.optString("id", "");
                     String svcType = svc.optString("type", "");
-                    Log.d(TAG, "  service[" + i + "]: " + svcName + " (id=" + svcId + ", type=" + svcType + ")");
+                    Log.i(TAG, "  service[" + i + "]: name='" + svcName + "' id='" + svcId + "' type=" + svcType);
 
-                    if (svcName.toLowerCase().contains(lowerQuery) ||
-                        lowerQuery.contains(svcName.toLowerCase())) {
-                        Log.i(TAG, "Matched service: " + svcName + " (id=" + svcId + ")");
-                        cb.onServiceFound(svcId, svcName);
-                        return;
+                    if (matched == null && (svcName.toLowerCase().contains(lowerQuery) ||
+                        lowerQuery.contains(svcName.toLowerCase()))) {
+                        matched = svc;
+                        Log.i(TAG, "  ^^^ MATCHED");
                     }
                 }
 
-                // No match — return the first service as a fallback (so the user can still proceed)
-                JSONObject first = services.getJSONObject(0);
-                String firstName = first.optString("name", "(unnamed)");
-                String firstId = first.optString("id", "");
-                Log.w(TAG, "No name match for '" + nameQuery + "'. Falling back to first service: " + firstName);
-                cb.onServiceFound(firstId, firstName);
+                if (matched != null) {
+                    String id = matched.optString("id", "");
+                    String name = matched.optString("name", "(unnamed)");
+                    if (id.isEmpty()) {
+                        cb.onError("Matched service '" + name + "' but it has no ID. "
+                            + "Raw: " + matched.toString());
+                        return;
+                    }
+                    cb.onServiceFound(id, name);
+                } else {
+                    // No match — return the first service that has a non-empty ID
+                    for (int i = 0; i < services.length(); i++) {
+                        JSONObject svc = services.getJSONObject(i);
+                        String id = svc.optString("id", "");
+                        if (!id.isEmpty()) {
+                            String name = svc.optString("name", "(unnamed)");
+                            Log.w(TAG, "No name match for '" + nameQuery + "'. Using first service with ID: " + name);
+                            cb.onServiceFound(id, name);
+                            return;
+                        }
+                    }
+                    cb.onError("Found " + services.length() + " services but none have a valid ID. "
+                        + "Raw response: " + result.body.substring(0, Math.min(300, result.body.length())));
+                }
             } catch (RenderApiException e) {
                 cb.onError(e.getMessage());
             } catch (Exception e) {
@@ -154,51 +190,106 @@ public class RenderApi {
     }
 
     /**
+     * Diagnostic: return the raw list of services as a string. Used by the
+     * 'Test API Connection' button so the user can see exactly what Render
+     * returns when we can't auto-detect.
+     */
+    public static void testConnection(String apiKey, Callback cb) {
+        new Thread(() -> {
+            try {
+                HttpResult result = apiRequestVerbose("GET",
+                    API_BASE + "/services?limit=20",
+                    apiKey, null);
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("HTTP ").append(result.status).append("\n");
+                sb.append("Response body (" ).append(result.body.length()).append(" bytes):\n");
+
+                if (result.status >= 400) {
+                    sb.append(result.body.isEmpty() ? "(empty error body)" : result.body);
+                    cb.onError(sb.toString());
+                    return;
+                }
+
+                JSONArray services = parseArray(result.body);
+                if (services == null) {
+                    sb.append("Could not parse as array. Raw:\n");
+                    sb.append(result.body.isEmpty() ? "(empty)" : result.body);
+                    cb.onSuccess(sb.toString());
+                    return;
+                }
+
+                sb.append(services.length()).append(" service(s) found:\n\n");
+                for (int i = 0; i < services.length(); i++) {
+                    JSONObject svc = services.getJSONObject(i);
+                    String name = svc.optString("name", "(no name)");
+                    String id = svc.optString("id", "(no id)");
+                    String type = svc.optString("type", "?");
+                    sb.append("  [").append(i).append("] ").append(name)
+                      .append("  id=").append(id)
+                      .append("  type=").append(type).append("\n");
+                }
+                if (services.length() == 0) {
+                    sb.append("(no services — your API key may be read-only or scoped to nothing)");
+                }
+                cb.onSuccess(sb.toString());
+            } catch (Exception e) {
+                cb.onError("Exception: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    /**
      * Add a custom domain to a Render service.
      * Render starts provisioning SSL automatically (takes ~1-2 min).
      *
-     * IMPORTANT: After the POST, we immediately call listCustomDomains()
-     * to VERIFY the domain was actually added. This catches the bug where
-     * Render returns an empty response body and we falsely report success.
+     * Tries BOTH field names ('customDomain' and 'name') since Render's docs
+     * sometimes show different formats.
      */
     public static void addCustomDomain(String apiKey, String serviceId,
                                          String domain, Callback cb) {
         new Thread(() -> {
             try {
+                // Try 'customDomain' field first (per official Render API docs)
                 JSONObject body = new JSONObject();
                 body.put("customDomain", domain.trim().toLowerCase());
 
-                // Make the POST — capture both status and body
                 HttpResult result = apiRequestVerbose("POST",
                     API_BASE + "/services/" + serviceId + "/custom-domains",
                     apiKey, body.toString());
 
                 Log.i(TAG, "addCustomDomain HTTP " + result.status + " body=" + result.body);
 
-                // Render returns 201 Created on success, with the created resource as JSON.
-                // 200 = already exists (some APIs do this)
-                // 204 = success, no body
-                // 400/401/403/404 = error
+                // If 400 with a message about field name, try 'name' field instead
+                if (result.status == 400 && result.body != null &&
+                    (result.body.contains("customDomain") || result.body.contains("invalid"))) {
+                    Log.w(TAG, "Trying alternate field name 'name'...");
+                    JSONObject altBody = new JSONObject();
+                    altBody.put("name", domain.trim().toLowerCase());
+                    result = apiRequestVerbose("POST",
+                        API_BASE + "/services/" + serviceId + "/custom-domains",
+                        apiKey, altBody.toString());
+                    Log.i(TAG, "addCustomDomain (alt) HTTP " + result.status + " body=" + result.body);
+                }
+
                 if (result.status >= 400) {
                     String errMsg = extractErrorMessage(result.body, result.status);
                     cb.onError("HTTP " + result.status + ": " + errMsg);
                     return;
                 }
 
-                // Now VERIFY by listing domains — don't trust the POST alone
-                Thread.sleep(500);  // give Render a moment to commit
+                // VERIFY by listing domains
+                Thread.sleep(500);
                 HttpResult listResult = apiRequestVerbose("GET",
                     API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
                     apiKey, null);
 
                 JSONArray domains = parseArray(listResult.body);
                 String lowerDomain = domain.trim().toLowerCase();
-                boolean found = false;
                 if (domains != null) {
                     for (int i = 0; i < domains.length(); i++) {
                         JSONObject d = domains.getJSONObject(i);
                         if (d.optString("customDomain", "").toLowerCase().equals(lowerDomain)) {
-                            found = true;
                             String ssl = d.optString("sslStatus", "pending");
                             Log.i(TAG, "Verified: domain is on Render (ssl=" + ssl + ")");
                             cb.onSuccess("Domain verified on Render. SSL status: " + ssl
@@ -208,7 +299,6 @@ public class RenderApi {
                     }
                 }
 
-                // POST returned 2xx but domain isn't in the list — Render silently rejected it
                 cb.onError("Render accepted the request (HTTP " + result.status
                     + ") but the domain is NOT in the domain list. "
                     + "This usually means your API key lacks Write scope, or the service ID is wrong. "

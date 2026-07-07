@@ -34,8 +34,10 @@ public class SettingsActivity extends AppCompatActivity {
 
     // Render API settings — lets the app add custom domains without visiting Render dashboard
     private EditText etRenderApiKey;
+    private EditText etRenderServiceId;  // manual entry fallback
     private Button btnSaveRender;
     private Button btnAutoDetectRender;
+    private Button btnTestConnection;
     private TextView tvRenderStatus;
     private TextView tvAbout;
 
@@ -61,8 +63,10 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Render API settings
         etRenderApiKey   = findViewById(R.id.et_render_api_key);
+        etRenderServiceId = findViewById(R.id.et_render_service_id);
         btnSaveRender    = findViewById(R.id.btn_save_render);
         btnAutoDetectRender = findViewById(R.id.btn_auto_detect_render);
+        btnTestConnection = findViewById(R.id.btn_test_connection);
         tvRenderStatus   = findViewById(R.id.tv_render_status);
         tvAbout = findViewById(R.id.tv_about);
 
@@ -87,10 +91,13 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Render API settings
         etRenderApiKey.setText(prefs.getString("render_api_key", ""));
+        etRenderServiceId.setText(prefs.getString("render_service_id", ""));
         String savedServiceId = prefs.getString("render_service_id", "");
         String savedServiceName = prefs.getString("render_service_name", "");
         if (!savedServiceId.isEmpty()) {
             tvRenderStatus.setText("Service: " + savedServiceName + "\nID: " + savedServiceId);
+        } else {
+            tvRenderStatus.setText("Not configured. Either auto-detect or enter service ID manually.\n\nTo find your service ID manually:\n1. Open dashboard.render.com\n2. Click your bantu-tunnel service\n3. The URL contains the ID: render.com/web/srv-XXXXXXX\n4. Copy srv-XXXXXXX below");
         }
 
         tvAbout.setText(
@@ -136,6 +143,7 @@ public class SettingsActivity extends AppCompatActivity {
         btnSaveBantu.setOnClickListener(v -> saveBantuSettings());
         btnSaveRender.setOnClickListener(v -> saveRenderSettings());
         btnAutoDetectRender.setOnClickListener(v -> autoDetectRenderService());
+        btnTestConnection.setOnClickListener(v -> testRenderConnection());
 
         // Save on switch toggle
         switchAutostart.setOnCheckedChangeListener((buttonView, isChecked) -> saveSettings());
@@ -180,19 +188,61 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * Save Render API key. The service ID is auto-detected separately.
+     * Save Render API key AND manual service ID (if entered).
      */
     private void saveRenderSettings() {
         String apiKey = etRenderApiKey.getText().toString().trim();
-        PreferenceManager.getDefaultSharedPreferences(this).edit()
-            .putString("render_api_key", apiKey)
-            .apply();
-        Toast.makeText(this, "Render API key saved", Toast.LENGTH_SHORT).show();
-        // Auto-detect the bantu-tunnel service if we don't have one yet
-        if (apiKey.length() > 10 &&
+        String manualServiceId = etRenderServiceId.getText().toString().trim();
+        android.content.SharedPreferences.Editor editor =
+            PreferenceManager.getDefaultSharedPreferences(this).edit();
+        editor.putString("render_api_key", apiKey);
+        // If user manually entered a service ID, save it
+        if (!manualServiceId.isEmpty()) {
+            editor.putString("render_service_id", manualServiceId);
+            editor.putString("render_service_name", "(manual: " + manualServiceId + ")");
+        }
+        editor.apply();
+        Toast.makeText(this, "Render settings saved", Toast.LENGTH_SHORT).show();
+        // Auto-detect if user didn't enter service ID manually and we don't have one
+        if (apiKey.length() > 10 && manualServiceId.isEmpty() &&
             PreferenceManager.getDefaultSharedPreferences(this).getString("render_service_id", "").isEmpty()) {
             autoDetectRenderService();
+        } else if (!manualServiceId.isEmpty()) {
+            tvRenderStatus.setText("Service ID set manually: " + manualServiceId);
         }
+    }
+
+    /**
+     * Test the Render API connection — shows raw response so user can see
+     * what's happening when auto-detect fails.
+     */
+    private void testRenderConnection() {
+        String apiKey = etRenderApiKey.getText().toString().trim();
+        if (apiKey.isEmpty()) {
+            Toast.makeText(this, "Enter your API key first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        tvRenderStatus.setText("Testing connection to Render API...");
+        btnTestConnection.setEnabled(false);
+
+        RenderApi.testConnection(apiKey, new RenderApi.Callback() {
+            @Override public void onSuccess(String message) {
+                runOnUiThread(() -> {
+                    btnTestConnection.setEnabled(true);
+                    tvRenderStatus.setText(message);
+                    Toast.makeText(SettingsActivity.this,
+                        "Check status above", Toast.LENGTH_LONG).show();
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    btnTestConnection.setEnabled(true);
+                    tvRenderStatus.setText("ERROR:\n" + error);
+                    Toast.makeText(SettingsActivity.this,
+                        "Connection failed — see status", Toast.LENGTH_LONG).show();
+                });
+            }
+        });
     }
 
     /**

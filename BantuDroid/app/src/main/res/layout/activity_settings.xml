@@ -288,11 +288,35 @@
             android:inputType="textPassword"
             android:layout_marginBottom="8dp" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Service ID (manual — use if auto-detect fails)"
+            android:textColor="@color/bantu_green"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/et_render_service_id"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@color/bg_card"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:hint="srv-xxxxxxxxxxxxxxxxxxxx"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:inputType="textUri"
+            android:layout_marginBottom="8dp" />
+
         <Button
             android:id="@+id/btn_save_render"
             android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:text="Save API Key"
+            android:text="Save Settings"
             android:backgroundTint="@color/bantu_green"
             android:textColor="@color/black"
             android:layout_marginBottom="8dp" />
@@ -301,8 +325,17 @@
             android:id="@+id/btn_auto_detect_render"
             android:layout_width="match_parent"
             android:layout_height="44dp"
-            android:text="Auto-detect bantu-tunnel Service"
+            android:text="Auto-detect Service"
             android:backgroundTint="#FFB74D"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_test_connection"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Test API Connection (diagnostic)"
+            android:backgroundTint="#64B5F6"
             android:textColor="@color/black"
             android:layout_marginBottom="8dp" />
 
