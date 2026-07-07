@@ -26,12 +26,12 @@ import java.net.URLEncoder;
  *
  * API reference: https://render.com/docs/api
  *
- * Endpoints used:
- *   GET    /v1/services                        — list services (find bantu-tunnel)
- *   POST   /v1/services/{id}/custom-domains    — add a custom domain
- *   GET    /v1/services/{id}/custom-domains    — list custom domains
- *   GET    /v1/services/{id}/custom-domains/{domainId} — check status (SSL provisioning)
- *   DELETE /v1/services/{id}/custom-domains/{domainId} — remove
+ * IMPORTANT (response format):
+ *   The Render API returns BARE JSON arrays for list endpoints, NOT objects
+ *   wrapping an array. For example:
+ *     GET /v1/services             -> [ {id, name, ...}, ... ]
+ *     GET /v1/services/{id}/custom-domains -> [ {id, customDomain, ...}, ... ]
+ *   We use a parseArray() helper that handles both forms defensively.
  */
 public class RenderApi {
 
@@ -54,49 +54,92 @@ public class RenderApi {
     }
 
     /**
+     * Parse a JSON response into a JSONArray, handling BOTH bare-array form
+     * (which is what Render actually returns) and object-wrapped form
+     * (defensive fallback).
+     *
+     *   "[...]"              -> parse as bare array
+     *   "{services:[...]}"   -> extract .services array
+     *   "{customDomains:[...]}" -> extract .customDomains array
+     */
+    private static JSONArray parseArray(String response) {
+        if (response == null) return null;
+        String trimmed = response.trim();
+        if (trimmed.isEmpty()) return null;
+
+        // Bare array form — this is what Render returns
+        if (trimmed.startsWith("[")) {
+            try { return new JSONArray(trimmed); }
+            catch (Exception e) { Log.e(TAG, "parseArray JSON array failed: " + e.getMessage()); return null; }
+        }
+
+        // Object-wrapped form (defensive — in case Render changes their API later)
+        if (trimmed.startsWith("{")) {
+            try {
+                JSONObject obj = new JSONObject(trimmed);
+                // Try common wrapper keys
+                String[] keys = {"services", "customDomains", "data", "items", "results"};
+                for (String k : keys) {
+                    JSONArray arr = obj.optJSONArray(k);
+                    if (arr != null) return arr;
+                }
+                // No known wrapper key — log what we got so the user can report it
+                Log.w(TAG, "parseArray: object response had no recognized array key: " + trimmed.substring(0, Math.min(200, trimmed.length())));
+                return null;
+            } catch (Exception e) { Log.e(TAG, "parseArray JSON object failed: " + e.getMessage()); return null; }
+        }
+        return null;
+    }
+
+    /**
      * Find a service by name (e.g. "bantu-tunnel"). Iterates through paginated
      * service list looking for a name match (case-insensitive, partial).
      */
     public static void findServiceByName(String apiKey, String nameQuery, ServiceCallback cb) {
         new Thread(() -> {
             try {
-                // GET /v1/services?limit=100
+                // GET /v1/services?limit=100  — returns bare array
                 String response = apiRequest("GET",
-                    API_BASE + "/services?limit=100&name=" + URLEncoder.encode(nameQuery, "UTF-8"),
+                    API_BASE + "/services?limit=100",
                     apiKey, null);
                 if (response == null) {
-                    cb.onError("No response from Render API");
+                    cb.onError("No response from Render API. Check your API key.");
                     return;
                 }
-                JSONObject json = new JSONObject(response);
-                JSONArray services = json.optJSONArray("services");
+
+                JSONArray services = parseArray(response);
                 if (services == null || services.length() == 0) {
-                    // Try without the name filter — sometimes the filter is strict
-                    response = apiRequest("GET", API_BASE + "/services?limit=100", apiKey, null);
-                    if (response == null) { cb.onError("No services found"); return; }
-                    json = new JSONObject(response);
-                    services = json.optJSONArray("services");
-                }
-                if (services == null || services.length() == 0) {
-                    cb.onError("No Render services found on your account");
+                    cb.onError("No Render services found on your account. Make sure your API key has access.");
                     return;
                 }
+
+                Log.i(TAG, "Found " + services.length() + " service(s) on account");
+
                 // Find a service whose name contains the query (case-insensitive)
                 String lowerQuery = nameQuery.toLowerCase();
                 for (int i = 0; i < services.length(); i++) {
                     JSONObject svc = services.getJSONObject(i);
                     String svcName = svc.optString("name", "");
                     String svcId = svc.optString("id", "");
+                    String svcType = svc.optString("type", "");
+                    Log.d(TAG, "  service[" + i + "]: " + svcName + " (id=" + svcId + ", type=" + svcType + ")");
+
                     if (svcName.toLowerCase().contains(lowerQuery) ||
                         lowerQuery.contains(svcName.toLowerCase())) {
-                        Log.i(TAG, "Found service: " + svcName + " (id=" + svcId + ")");
+                        Log.i(TAG, "Matched service: " + svcName + " (id=" + svcId + ")");
                         cb.onServiceFound(svcId, svcName);
                         return;
                     }
                 }
-                // No match — return the first service as a fallback
+
+                // No match — return the first service as a fallback (so the user can still proceed)
                 JSONObject first = services.getJSONObject(0);
-                cb.onServiceFound(first.optString("id", ""), first.optString("name", "(unnamed)"));
+                String firstName = first.optString("name", "(unnamed)");
+                String firstId = first.optString("id", "");
+                Log.w(TAG, "No name match for '" + nameQuery + "'. Falling back to first service: " + firstName);
+                cb.onServiceFound(firstId, firstName);
+            } catch (RenderApiException e) {
+                cb.onError(e.getMessage());
             } catch (Exception e) {
                 Log.e(TAG, "findServiceByName error", e);
                 cb.onError("Failed: " + e.getMessage());
@@ -120,26 +163,26 @@ public class RenderApi {
                     apiKey, body.toString());
 
                 if (response == null) {
-                    cb.onError("No response from Render API");
+                    // 204 No Content sometimes — treat as success
+                    cb.onSuccess("Domain added to Render.");
                     return;
                 }
 
-                // 201 = created, 200 = already exists
+                // Response is a single object (not array) — the created domain resource
                 JSONObject json = new JSONObject(response);
-                String domainId = json.optString("id", "");
                 String sslStatus = json.optString("sslStatus", "pending");
                 String verificationStatus = json.optString("verificationStatus", "pending");
 
-                Log.i(TAG, "Custom domain added: " + domain + " (id=" + domainId
-                    + ", ssl=" + sslStatus + ", verification=" + verificationStatus + ")");
+                Log.i(TAG, "Custom domain added: " + domain + " (ssl=" + sslStatus + ", verification=" + verificationStatus + ")");
                 cb.onSuccess("Domain added to Render. SSL provisioning: " + sslStatus
                     + ". Add the CNAME at your registrar now.");
             } catch (RenderApiException e) {
-                // API returned an error — check for "already exists"
-                if (e.getMessage() != null && e.getMessage().toLowerCase().contains("already")) {
+                // Check for "already exists" — that's not a fatal error
+                String msg = e.getMessage();
+                if (msg != null && msg.toLowerCase().contains("already")) {
                     cb.onSuccess("Domain already added to Render (this is OK)");
                 } else {
-                    cb.onError(e.getMessage());
+                    cb.onError(msg != null ? msg : "API error");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "addCustomDomain error", e);
@@ -155,16 +198,14 @@ public class RenderApi {
                                          String domain, DomainStatusCallback cb) {
         new Thread(() -> {
             try {
-                // First, list domains to find the ID for this domain
                 String response = apiRequest("GET",
                     API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
                     apiKey, null);
-                if (response == null) { cb.onError("No response"); return; }
+                if (response == null) { cb.onError("No response from Render API"); return; }
 
-                JSONObject json = new JSONObject(response);
-                JSONArray domains = json.optJSONArray("customDomains");
-                if (domains == null) {
-                    cb.onError("No custom domains on this service");
+                JSONArray domains = parseArray(response);
+                if (domains == null || domains.length() == 0) {
+                    cb.onError("No custom domains on this service yet. Tap 'Add Domain to Render' first.");
                     return;
                 }
 
@@ -191,6 +232,8 @@ public class RenderApi {
                     }
                 }
                 cb.onError("Domain " + domain + " not found on this service. Add it first.");
+            } catch (RenderApiException e) {
+                cb.onError(e.getMessage());
             } catch (Exception e) {
                 Log.e(TAG, "getDomainStatus error", e);
                 cb.onError("Failed: " + e.getMessage());
@@ -205,14 +248,12 @@ public class RenderApi {
                                             String domain, Callback cb) {
         new Thread(() -> {
             try {
-                // Find the domain ID first
                 String response = apiRequest("GET",
                     API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
                     apiKey, null);
                 if (response == null) { cb.onError("No response"); return; }
 
-                JSONObject json = new JSONObject(response);
-                JSONArray domains = json.optJSONArray("customDomains");
+                JSONArray domains = parseArray(response);
                 if (domains == null) { cb.onError("No custom domains"); return; }
 
                 String lowerDomain = domain.trim().toLowerCase();
@@ -273,20 +314,28 @@ public class RenderApi {
             while ((line = r.readLine()) != null) sb.append(line);
             String response = sb.toString();
             if (status < 200 || status >= 300) {
-                // Try to extract error message from JSON
+                // Try to extract a useful error message from JSON
+                String errMsg = "HTTP " + status;
                 try {
-                    JSONObject errJson = new JSONObject(response);
-                    JSONArray errors = errJson.optJSONArray("errors");
-                    if (errors != null && errors.length() > 0) {
-                        throw new RenderApiException(errors.getJSONObject(0).optString("message",
-                            "HTTP " + status));
+                    // Response might be an object with "message" or "errors"
+                    if (response.trim().startsWith("{")) {
+                        JSONObject errJson = new JSONObject(response);
+                        JSONArray errors = errJson.optJSONArray("errors");
+                        if (errors != null && errors.length() > 0) {
+                            errMsg = errors.getJSONObject(0).optString("message", errMsg);
+                        } else {
+                            errMsg = errJson.optString("message", errMsg);
+                        }
+                    } else if (response.trim().startsWith("[")) {
+                        JSONArray errArr = new JSONArray(response);
+                        if (errArr.length() > 0) {
+                            errMsg = errArr.getJSONObject(0).optString("message", errMsg);
+                        }
                     }
-                    String msg = errJson.optString("message", "HTTP " + status);
-                    throw new RenderApiException(msg);
-                } catch (RenderApiException e) { throw e; }
-                catch (Exception e) { throw new RenderApiException("HTTP " + status); }
+                } catch (Exception ignored) {}
+                throw new RenderApiException(errMsg);
             }
-            return response;
+            return response.isEmpty() ? null : response;
         } finally {
             conn.disconnect();
         }
