@@ -255,6 +255,69 @@
             android:textColor="@color/black"
             android:layout_marginBottom="24dp" />
 
+        <!-- Render API Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="RENDER API (for custom domains)"
+            android:textColor="@color/bantu_green"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Lets BantuDroid add custom domains to your bantu-tunnel Render service automatically. Get an API key at dashboard.render.com/users/me/api-keys (needs Write scope)."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/et_render_api_key"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@color/bg_card"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:hint="Render API key (rnd_...)"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:inputType="textPassword"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_save_render"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Save API Key"
+            android:backgroundTint="@color/bantu_green"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_auto_detect_render"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Auto-detect bantu-tunnel Service"
+            android:backgroundTint="#FFB74D"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_render_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Not configured"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:background="@color/bg_card"
+            android:padding="8dp"
+            android:layout_marginBottom="24dp" />
+
         <!-- About Section -->
         <TextView
             android:layout_width="wrap_content"

@@ -36,7 +36,7 @@ import androidx.preference.PreferenceManager;
 public class DnsActivity extends AppCompatActivity {
 
     private EditText etDomain;
-    private Button btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
+    private Button btnAddToRender, btnCheckStatus, btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
     private TextView tvStatus, tvInstructions, tvLog;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -46,6 +46,8 @@ public class DnsActivity extends AppCompatActivity {
         setContentView(R.layout.activity_dns);
 
         etDomain = findViewById(R.id.et_domain);
+        btnAddToRender = findViewById(R.id.btn_add_to_render);
+        btnCheckStatus = findViewById(R.id.btn_check_status);
         btnBind = findViewById(R.id.btn_bind);
         btnUnbind = findViewById(R.id.btn_unbind);
         btnOpenInBrowser = findViewById(R.id.btn_open_browser);
@@ -68,6 +70,8 @@ public class DnsActivity extends AppCompatActivity {
             tvInstructions.setText(buildInstructions("bantu-tunnel-xxxx.onrender.com"));
         }
 
+        btnAddToRender.setOnClickListener(v -> addDomainToRender());
+        btnCheckStatus.setOnClickListener(v -> checkDomainStatus());
         btnBind.setOnClickListener(v -> bindDomain());
         btnUnbind.setOnClickListener(v -> unbindDomain());
         btnOpenInBrowser.setOnClickListener(v -> openInBrowser());
@@ -87,16 +91,25 @@ public class DnsActivity extends AppCompatActivity {
     private void refreshState() {
         boolean connected = TunnelService.isBantuConnected();
         boolean running = TunnelService.isRunning();
+        boolean hasRender = !prefs().getString("render_api_key", "").isEmpty()
+            && !prefs().getString("render_service_id", "").isEmpty();
+
+        btnAddToRender.setEnabled(hasRender);
+        btnCheckStatus.setEnabled(hasRender);
         btnBind.setEnabled(connected);
         btnUnbind.setEnabled(connected);
-        if (connected) {
-            tvStatus.setText("Tunnel active — ready to bind domain.");
+
+        if (!hasRender) {
+            tvStatus.setText("Add your Render API key in Settings first to enable automatic domain setup.");
+            btnStartTunnelFirst.setVisibility(View.GONE);
+        } else if (connected) {
+            tvStatus.setText("Tunnel active. Add domain to Render, then bind.");
             btnStartTunnelFirst.setVisibility(View.GONE);
         } else if (running) {
             tvStatus.setText("Tunnel is connecting... please wait.");
             btnStartTunnelFirst.setVisibility(View.GONE);
         } else {
-            tvStatus.setText("No active Bantu tunnel. Start one first.");
+            tvStatus.setText("No active Bantu tunnel. Start one first (or add domain anyway).");
             btnStartTunnelFirst.setVisibility(View.VISIBLE);
         }
     }
@@ -119,33 +132,109 @@ public class DnsActivity extends AppCompatActivity {
     }
 
     private String buildInstructions(String renderHost) {
-        return "HOW THIS WORKS (no Cloudflare needed):\n\n" +
-            "Your bantu-tunnel server runs on Render. Render already supports\n" +
-            "custom domains with automatic HTTPS. You just need to:\n\n" +
-            "1. RENDER DASHBOARD\n" +
-            "   Open your bantu-tunnel service on Render.\n" +
-            "   Go to Settings -> Custom Domains -> Add your domain\n" +
-            "   (e.g. splannes.co.tz).\n" +
+        return "HOW THIS WORKS (fully automated from this app):\n\n" +
+            "1. SETTINGS (one-time)\n" +
+            "   Open Settings -> RENDER API section.\n" +
+            "   Get an API key at dashboard.render.com/users/me/api-keys\n" +
+            "   (needs Write scope). Paste it + tap Auto-detect.\n\n" +
+            "2. ADD DOMAIN TO RENDER (this app does it)\n" +
+            "   Enter your domain below + tap 'Add to Render'.\n" +
+            "   BantuDroid calls Render's API to register the domain.\n" +
             "   Render provisions HTTPS automatically.\n\n" +
-            "2. WAZOHOST DNS PANEL\n" +
+            "3. WAZOHOST DNS PANEL (manual — only step outside this app)\n" +
             "   Log in to Wazohost -> your domain -> DNS management.\n" +
             "   Add a CNAME record:\n" +
-            "     Name/Host:  @  (or splannes.co.tz)\n" +
+            "     Name/Host:  @  (or your domain)\n" +
             "     Value/Target: " + renderHost + "\n" +
             "     TTL: Automatic\n\n" +
-            "3. BIND DOMAIN HERE\n" +
-            "   Enter your domain below and tap Bind Domain.\n" +
-            "   This tells your bantu-tunnel server to route requests\n" +
-            "   for that domain to your phone's tunnel.\n\n" +
-            "4. VISIT\n" +
-            "   Open https://splannes.co.tz in any browser.\n" +
-            "   It routes: Render -> bantu-tunnel -> your phone -> localhost.\n\n" +
-            "WHY THIS IS BETTER THAN CLOUDFLARE:\n" +
-            "   - No external accounts\n" +
-            "   - No API tokens to manage\n" +
+            "4. CHECK STATUS\n" +
+            "   Tap 'Check Status' to see if SSL is ready.\n" +
+            "   Usually takes 1-2 minutes.\n\n" +
+            "5. BIND TO TUNNEL\n" +
+            "   Start a Bantu tunnel (if not running).\n" +
+            "   Tap 'Bind Domain to Tunnel'.\n" +
+            "   This tells your bantu-tunnel server to route\n" +
+            "   requests for that domain to your phone.\n\n" +
+            "6. VISIT\n" +
+            "   Tap 'Open in Browser' -> https://your-domain loads.\n\n" +
+            "WHY THIS IS BETTER:\n" +
+            "   - No Cloudflare\n" +
+            "   - No Render dashboard visits (except one-time API key)\n" +
             "   - No nameserver transfer (you keep Wazohost)\n" +
-            "   - Everything controlled from this app\n" +
-            "   - Render handles HTTPS automatically";
+            "   - Everything controlled from this app";
+    }
+
+    /** Add the domain to Render via API — Render starts provisioning SSL. */
+    private void addDomainToRender() {
+        final String domain = etDomain.getText().toString().trim().toLowerCase();
+        if (domain.isEmpty()) {
+            Toast.makeText(this, "Enter your domain first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!domain.contains(".") || domain.length() < 4) {
+            Toast.makeText(this, "That doesn't look like a domain", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String apiKey = prefs().getString("render_api_key", "");
+        final String serviceId = prefs().getString("render_service_id", "");
+        if (apiKey.isEmpty() || serviceId.isEmpty()) {
+            Toast.makeText(this, "Set Render API key in Settings first", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        prefs().edit().putString("dns_domain", domain).apply();
+        log("Adding " + domain + " to Render service " + serviceId + "...");
+        setStatus("Adding domain to Render...");
+        btnAddToRender.setEnabled(false);
+
+        RenderApi.addCustomDomain(apiKey, serviceId, domain, new RenderApi.Callback() {
+            @Override public void onSuccess(String message) {
+                runOnUiThread(() -> {
+                    btnAddToRender.setEnabled(true);
+                    log("SUCCESS: " + message);
+                    setStatus("Domain added to Render. Now add CNAME at Wazohost, then check status.");
+                    Toast.makeText(DnsActivity.this, "Domain added!", Toast.LENGTH_SHORT).show();
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    btnAddToRender.setEnabled(true);
+                    log("ERROR: " + error);
+                    setStatus("Failed: " + error);
+                });
+            }
+        });
+    }
+
+    /** Poll Render API for SSL provisioning status. */
+    private void checkDomainStatus() {
+        final String domain = etDomain.getText().toString().trim().toLowerCase();
+        if (domain.isEmpty()) return;
+        final String apiKey = prefs().getString("render_api_key", "");
+        final String serviceId = prefs().getString("render_service_id", "");
+        if (apiKey.isEmpty() || serviceId.isEmpty()) return;
+
+        log("Checking SSL status for " + domain + "...");
+        setStatus("Checking status...");
+        btnCheckStatus.setEnabled(false);
+
+        RenderApi.getDomainStatus(apiKey, serviceId, domain, new RenderApi.DomainStatusCallback() {
+            @Override public void onStatus(String domainId, String verificationStatus, String sslStatus, String message) {
+                runOnUiThread(() -> {
+                    btnCheckStatus.setEnabled(true);
+                    log("SSL=" + sslStatus + " verification=" + verificationStatus);
+                    log(message);
+                    setStatus(message);
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    btnCheckStatus.setEnabled(true);
+                    log("ERROR: " + error);
+                    setStatus("Failed: " + error);
+                });
+            }
+        });
     }
 
     private void bindDomain() {

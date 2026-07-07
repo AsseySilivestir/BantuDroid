@@ -69,10 +69,32 @@
 
         <!-- Action buttons -->
         <Button
+            android:id="@+id/btn_add_to_render"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="1. Add Domain to Render"
+            android:textSize="14sp"
+            android:backgroundTint="#FFB74D"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
+            android:id="@+id/btn_check_status"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="2. Check SSL Status"
+            android:textSize="13sp"
+            android:backgroundTint="#64B5F6"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
             android:id="@+id/btn_bind"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:text="Bind Domain to Tunnel"
+            android:text="3. Bind Domain to Tunnel"
             android:textSize="14sp"
             android:backgroundTint="@color/bantu_green"
             android:textColor="@color/black"
