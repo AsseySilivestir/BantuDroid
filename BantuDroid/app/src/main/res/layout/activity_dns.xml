@@ -91,6 +91,28 @@
             android:enabled="false" />
 
         <Button
+            android:id="@+id/btn_dns_records"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="Show DNS Records from Render"
+            android:textSize="14sp"
+            android:backgroundTint="#FFB74D"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
+            android:id="@+id/btn_remove_domain"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="Remove Domain from Render"
+            android:textSize="13sp"
+            android:backgroundTint="#F44336"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <Button
             android:id="@+id/btn_list_domains"
             android:layout_width="match_parent"
             android:layout_height="44dp"

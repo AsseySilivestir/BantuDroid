@@ -38,6 +38,11 @@ public class RenderApi {
     private static final String TAG = "RenderApi";
     private static final String API_BASE = "https://api.render.com/v1";
 
+    // Hardcoded for the user's bantu-tunnel Render service
+    public static final String HARDCODED_SERVICE_ID = "srv-d95v5onaqgkc73ej3b70";
+    public static final String HARDCODED_SERVICE_NAME = "bantu-tunnel";
+    public static final String HARDCODED_RENDER_HOST = "bantu-tunnel.onrender.com";
+
     public interface Callback {
         void onSuccess(String message);
         void onError(String error);
@@ -239,79 +244,170 @@ public class RenderApi {
         }).start();
     }
 
-    /**
-     * Add a custom domain to a Render service.
-     * Render starts provisioning SSL automatically (takes ~1-2 min).
-     *
-     * Tries BOTH field names ('customDomain' and 'name') since Render's docs
-     * sometimes show different formats.
-     */
+    /** Sanitize a domain name per RFC 1034. */
+    public static String sanitizeDomain(String input) {
+        if (input == null) return null;
+        String d = input.trim().toLowerCase();
+        if (d.startsWith("https://")) d = d.substring(8);
+        else if (d.startsWith("http://")) d = d.substring(7);
+        int slash = d.indexOf('/');
+        if (slash > 0) d = d.substring(0, slash);
+        int colon = d.indexOf(':');
+        if (colon > 0) d = d.substring(0, colon);
+        while (d.endsWith(".")) d = d.substring(0, d.length() - 1);
+        d = d.replaceAll("[^a-z0-9.-]", "");
+        if (d.length() < 4 || !d.contains(".")) return null;
+        if (d.length() > 253) return null;
+        for (String label : d.split("\\.")) {
+            if (label.isEmpty() || label.length() > 63) return null;
+            if (label.startsWith("-") || label.endsWith("-")) return null;
+        }
+        return d;
+    }
+
     public static void addCustomDomain(String apiKey, String serviceId,
                                          String domain, Callback cb) {
         new Thread(() -> {
             try {
-                // Try 'customDomain' field first (per official Render API docs)
+                String cleanDomain = sanitizeDomain(domain);
+                if (cleanDomain == null) {
+                    cb.onError("Invalid domain: '" + domain + "'. Must be like www.splannes.co.tz");
+                    return;
+                }
+                String effectiveServiceId = (serviceId == null || serviceId.isEmpty())
+                    ? HARDCODED_SERVICE_ID : serviceId;
+
+                // Use 'name' field per Render's official curl docs
                 JSONObject body = new JSONObject();
-                body.put("customDomain", domain.trim().toLowerCase());
+                body.put("name", cleanDomain);
 
                 HttpResult result = apiRequestVerbose("POST",
-                    API_BASE + "/services/" + serviceId + "/custom-domains",
+                    API_BASE + "/services/" + effectiveServiceId + "/custom-domains",
                     apiKey, body.toString());
 
                 Log.i(TAG, "addCustomDomain HTTP " + result.status + " body=" + result.body);
 
-                // If 400 with a message about field name, try 'name' field instead
+                // If 400 mentioning customDomain, try that field name
                 if (result.status == 400 && result.body != null &&
-                    (result.body.contains("customDomain") || result.body.contains("invalid"))) {
-                    Log.w(TAG, "Trying alternate field name 'name'...");
+                    result.body.toLowerCase().contains("customdomain")) {
                     JSONObject altBody = new JSONObject();
-                    altBody.put("name", domain.trim().toLowerCase());
+                    altBody.put("customDomain", cleanDomain);
                     result = apiRequestVerbose("POST",
-                        API_BASE + "/services/" + serviceId + "/custom-domains",
+                        API_BASE + "/services/" + effectiveServiceId + "/custom-domains",
                         apiKey, altBody.toString());
-                    Log.i(TAG, "addCustomDomain (alt) HTTP " + result.status + " body=" + result.body);
                 }
 
                 if (result.status >= 400) {
                     String errMsg = extractErrorMessage(result.body, result.status);
-                    cb.onError("HTTP " + result.status + ": " + errMsg);
+                    cb.onError("HTTP " + result.status + ": " + errMsg + "\n\nRaw: " + result.body);
                     return;
                 }
 
-                // VERIFY by listing domains
+                // Verify
                 Thread.sleep(500);
                 HttpResult listResult = apiRequestVerbose("GET",
-                    API_BASE + "/services/" + serviceId + "/custom-domains?limit=100",
+                    API_BASE + "/services/" + effectiveServiceId + "/custom-domains?limit=100",
                     apiKey, null);
-
                 JSONArray domains = parseArray(listResult.body);
-                String lowerDomain = domain.trim().toLowerCase();
                 if (domains != null) {
                     for (int i = 0; i < domains.length(); i++) {
                         JSONObject d = domains.getJSONObject(i);
-                        if (d.optString("customDomain", "").toLowerCase().equals(lowerDomain)) {
+                        String dName = d.optString("customDomain", "").toLowerCase();
+                        if (dName.isEmpty()) dName = d.optString("name", "").toLowerCase();
+                        if (dName.equals(cleanDomain)) {
                             String ssl = d.optString("sslStatus", "pending");
-                            Log.i(TAG, "Verified: domain is on Render (ssl=" + ssl + ")");
-                            cb.onSuccess("Domain verified on Render. SSL status: " + ssl
-                                + ". Add the CNAME at Wazohost, then check status.");
+                            cb.onSuccess("Domain verified on Render: " + cleanDomain + "\nSSL: " + ssl);
                             return;
                         }
                     }
                 }
-
-                cb.onError("Render accepted the request (HTTP " + result.status
-                    + ") but the domain is NOT in the domain list. "
-                    + "This usually means your API key lacks Write scope, or the service ID is wrong. "
-                    + "Check your API key has 'Write' permissions at dashboard.render.com/users/me/api-keys");
+                cb.onError("Render accepted (HTTP " + result.status + ") but domain not in list.\nPOST: " + result.body + "\nLIST: " + listResult.body);
             } catch (RenderApiException e) {
                 String msg = e.getMessage();
                 if (msg != null && msg.toLowerCase().contains("already")) {
-                    cb.onSuccess("Domain already added to Render (verified)");
+                    cb.onSuccess("Domain already added to Render");
                 } else {
                     cb.onError(msg != null ? msg : "API error");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "addCustomDomain error", e);
+                cb.onError("Failed: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    /** Fetch DNS records Render requires and return as formatted string. */
+    public static void getDnsInstructions(String apiKey, String serviceId,
+                                            String domain, Callback cb) {
+        new Thread(() -> {
+            try {
+                String effectiveServiceId = (serviceId == null || serviceId.isEmpty())
+                    ? HARDCODED_SERVICE_ID : serviceId;
+                String cleanDomain = sanitizeDomain(domain);
+                if (cleanDomain == null) { cb.onError("Invalid domain"); return; }
+
+                HttpResult listResult = apiRequestVerbose("GET",
+                    API_BASE + "/services/" + effectiveServiceId + "/custom-domains?limit=100",
+                    apiKey, null);
+
+                JSONObject domainObj = null;
+                JSONArray domains = parseArray(listResult.body);
+                if (domains != null) {
+                    for (int i = 0; i < domains.length(); i++) {
+                        JSONObject d = domains.getJSONObject(i);
+                        String dName = d.optString("customDomain", "").toLowerCase();
+                        if (dName.isEmpty()) dName = d.optString("name", "").toLowerCase();
+                        if (dName.equals(cleanDomain)) { domainObj = d; break; }
+                    }
+                }
+                if (domainObj == null) {
+                    cb.onError("Domain " + cleanDomain + " not found on Render. Add it first.");
+                    return;
+                }
+
+                StringBuilder sb = new StringBuilder();
+                String ssl = domainObj.optString("sslStatus", "unknown");
+                String verif = domainObj.optString("verificationStatus", "unknown");
+                sb.append("DNS RECORDS FOR: ").append(cleanDomain).append("\n");
+                sb.append("Status: ssl=").append(ssl).append(" verification=").append(verif).append("\n\n");
+
+                // Try verification records from API
+                JSONArray verifRecords = domainObj.optJSONArray("verificationRecords");
+                if (verifRecords != null && verifRecords.length() > 0) {
+                    sb.append("RECORDS RENDER REQUIRES:\n\n");
+                    for (int i = 0; i < verifRecords.length(); i++) {
+                        JSONObject r = verifRecords.getJSONObject(i);
+                        sb.append("[").append(i+1).append("] ").append(r.optString("type","CNAME")).append(" Record\n");
+                        sb.append("  Host:   ").append(r.optString("name","@")).append("\n");
+                        sb.append("  Value:  ").append(r.optString("value","")).append("\n\n");
+                    }
+                } else {
+                    // Compute defaults
+                    String hostLabel = "www";
+                    if (cleanDomain.startsWith("www.")) hostLabel = "www";
+                    else if (cleanDomain.startsWith("api.")) hostLabel = "api";
+                    else if (cleanDomain.startsWith("app.")) hostLabel = "app";
+                    else { int dot = cleanDomain.indexOf('.'); hostLabel = dot > 0 ? cleanDomain.substring(0, dot) : "@"; }
+
+                    sb.append("DNS RECORDS TO ADD AT YOUR REGISTRAR:\n\n");
+                    sb.append("[1] CNAME Record\n");
+                    sb.append("  Host/Name:  ").append(hostLabel).append("\n");
+                    sb.append("  Target:     ").append(HARDCODED_RENDER_HOST).append("\n");
+                    sb.append("  TTL:        Automatic\n\n");
+                    sb.append("[2] A Record (for apex/root domain)\n");
+                    sb.append("  Host/Name:  @\n");
+                    sb.append("  Value/IP:   216.24.57.1\n");
+                    sb.append("  TTL:        Automatic\n\n");
+                }
+
+                if ("issued".equals(ssl) && "verified".equals(verif)) {
+                    sb.append("VERIFIED - SSL issued! Visit https://").append(cleanDomain).append("\n");
+                } else if ("issuing".equals(ssl) || "pending".equals(ssl)) {
+                    sb.append("SSL provisioning... check again in 1-2 min.\n");
+                } else if ("failed".equals(ssl)) {
+                    sb.append("SSL FAILED - check DNS records are correct.\n");
+                }
+                cb.onSuccess(sb.toString());
+            } catch (Exception e) {
                 cb.onError("Failed: " + e.getMessage());
             }
         }).start();

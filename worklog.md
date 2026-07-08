@@ -247,3 +247,60 @@ Integrated the previously-created NEW files (BantuTunnelClient, TunnelService, D
 - Verify background survival: start Bantu tunnel, press Home, wait 30s, return to app — service should still be running and URL still active.
 - Verify tree button in FileManager renders a tree view of the current directory and "Copy" puts text on clipboard.
 - Verify `tree` and `apt`/`pkg` commands in Terminal behave as specified.
+
+---
+
+## Task ID: dns-buttons — Add DNS records + remove domain buttons (v2.12.6)
+
+### Overview
+Built on top of the v2.12.3 base. Bumped version to 2.12.6 (versionCode 305). Two new buttons on the DNS activity: "Show DNS Records from Render" and "Remove Domain from Render". Also hardcoded the bantu-tunnel Render service ID so the API keeps working even if the user hasn't auto-detected it.
+
+### Changes by file
+
+**1. `app/src/main/java/com/bantu/droid/RenderApi.java`**
+- Added three hardcoded constants right after `API_BASE`:
+  - `HARDCODED_SERVICE_ID = "srv-d95v5onaqgkc73ej3b70"`
+  - `HARDCODED_SERVICE_NAME = "bantu-tunnel"`
+  - `HARDCODED_RENDER_HOST = "bantu-tunnel.onrender.com"`
+- Added `sanitizeDomain(String input)` static helper (RFC 1034 domain normalization): trims, strips scheme/path/port, strips trailing dots, drops illegal chars, enforces length/label rules, returns null if invalid.
+- Replaced the entire `addCustomDomain()` method to:
+  - Use `sanitizeDomain()` and reject invalid input early with a friendly message.
+  - Fall back to `HARDCODED_SERVICE_ID` when the caller passes a null/empty `serviceId`.
+  - POST the domain using the `name` field first (Render's official curl-docs field), then retry with `customDomain` if Render returns a 400 mentioning `customdomain`.
+  - Verify the domain shows up in the subsequent list call (checks both `customDomain` and `name` JSON keys).
+- Added new `getDnsInstructions(String apiKey, String serviceId, String domain, Callback cb)` method:
+  - Lists custom domains, finds the matching one, and returns a formatted plain-text block (header + ssl/verification status).
+  - If Render returns `verificationRecords` in the JSON, prints each one (type/name/value).
+  - Otherwise, computes sensible defaults (CNAME `hostLabel → HARDCODED_RENDER_HOST`, plus an A record `@ → 216.24.57.1` for the apex).
+  - Appends a status line (`VERIFIED`/`SSL provisioning`/`SSL FAILED`) based on ssl+verification state.
+- Verified that `removeCustomDomain(...)` already existed in the file. Per task instructions, left it untouched.
+
+**2. `app/src/main/res/layout/activity_dns.xml`**
+- Inserted two new buttons between `btn_check_status` and `btn_list_domains`:
+  - `btn_dns_records` — "Show DNS Records from Render", orange #FFB74D, black text, 48dp tall, initially disabled.
+  - `btn_remove_domain` — "Remove Domain from Render", red #F44336, white text, 44dp tall, initially disabled.
+
+**3. `app/src/main/java/com/bantu/droid/DnsActivity.java`**
+- Added `import android.app.AlertDialog;` immediately after the `package` line.
+- Extended the button field declaration to include `btnDnsRecords, btnRemoveDomain`.
+- Wired both new buttons via `findViewById(...)` right after `btnCheckStatus`.
+- Added click listeners: `btnDnsRecords -> showDnsRecords()`, `btnRemoveDomain -> removeDomainFromRender()`, right after the `btnCheckStatus` listener.
+- In `refreshState()`, enabled both new buttons when `hasRender` is true (alongside `btnCheckStatus`).
+- Added `showDnsRecords()` method: validates domain + API key, calls `RenderApi.getDnsInstructions`, on success displays the records in a `ScrollView` + monospace `TextView` inside an `AlertDialog` with "Copy All" (puts the full text on the system clipboard via `ClipboardManager`) and "Close" buttons.
+- Added `removeDomainFromRender()` method: validates domain + API key, shows a confirmation `AlertDialog` ("Remove Domain" / "Cancel"), then calls `RenderApi.removeCustomDomain` and surfaces the result via log/status/toast.
+
+**4. `app/build.gradle`**
+- Bumped `versionCode` 301 → 305 and `versionName` "2.12.3" → "2.12.6".
+
+### Verification performed
+- Confirmed `removeCustomDomain` was already present in `RenderApi.java` (line ~508) and was left as-is per Step 5 instructions.
+- Confirmed all referenced IDs in `DnsActivity` (`btn_dns_records`, `btn_remove_domain`) exist in `activity_dns.xml`.
+- Confirmed `sanitizeDomain`, `getDnsInstructions`, and the rewritten `addCustomDomain` all reference the new `HARDCODED_*` constants and the existing `apiRequestVerbose`/`parseArray`/`extractErrorMessage` helpers.
+- `getSystemService(CLIPBOARD_SERVICE)` resolves to `Activity.getSystemService(String)` inherited by `AppCompatActivity` — no extra import needed because the call is unqualified inside the activity.
+
+### Next actions
+- Build the APK (`./gradlew assembleRelease`) to confirm compilation.
+- On-device test: enter a domain → "Add Domain to Render" → tap "Show DNS Records from Render" → verify the dialog renders with a "Copy All" button that copies text to clipboard.
+- Tap "Remove Domain from Render" → confirm dialog → verify the domain disappears from Render (cross-check by tapping "List All Domains on Render").
+- Sanity-check that the hardcoded service ID kicks in when Settings has no `render_service_id` (clear the saved value, then perform an add — the request should still target `srv-d95v5onaqgkc73ej3b70`).
+

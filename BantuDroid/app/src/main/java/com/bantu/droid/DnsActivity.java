@@ -1,5 +1,6 @@
 package com.bantu.droid;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
@@ -36,7 +37,7 @@ import androidx.preference.PreferenceManager;
 public class DnsActivity extends AppCompatActivity {
 
     private EditText etDomain;
-    private Button btnAddToRender, btnCheckStatus, btnListDomains, btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
+    private Button btnAddToRender, btnCheckStatus, btnDnsRecords, btnRemoveDomain, btnListDomains, btnBind, btnUnbind, btnOpenInBrowser, btnStartTunnelFirst;
     private TextView tvStatus, tvInstructions, tvLog;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -48,6 +49,8 @@ public class DnsActivity extends AppCompatActivity {
         etDomain = findViewById(R.id.et_domain);
         btnAddToRender = findViewById(R.id.btn_add_to_render);
         btnCheckStatus = findViewById(R.id.btn_check_status);
+        btnDnsRecords = findViewById(R.id.btn_dns_records);
+        btnRemoveDomain = findViewById(R.id.btn_remove_domain);
         btnListDomains = findViewById(R.id.btn_list_domains);
         btnBind = findViewById(R.id.btn_bind);
         btnUnbind = findViewById(R.id.btn_unbind);
@@ -73,6 +76,8 @@ public class DnsActivity extends AppCompatActivity {
 
         btnAddToRender.setOnClickListener(v -> addDomainToRender());
         btnCheckStatus.setOnClickListener(v -> checkDomainStatus());
+        btnDnsRecords.setOnClickListener(v -> showDnsRecords());
+        btnRemoveDomain.setOnClickListener(v -> removeDomainFromRender());
         btnListDomains.setOnClickListener(v -> listDomainsOnRender());
         btnBind.setOnClickListener(v -> bindDomain());
         btnUnbind.setOnClickListener(v -> unbindDomain());
@@ -98,6 +103,8 @@ public class DnsActivity extends AppCompatActivity {
 
         btnAddToRender.setEnabled(hasRender);
         btnCheckStatus.setEnabled(hasRender);
+        btnDnsRecords.setEnabled(hasRender);
+        btnRemoveDomain.setEnabled(hasRender);
         btnListDomains.setEnabled(hasRender);
         btnBind.setEnabled(connected);
         btnUnbind.setEnabled(connected);
@@ -337,5 +344,99 @@ public class DnsActivity extends AppCompatActivity {
         } catch (Exception e) {
             Toast.makeText(this, "No browser app available", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Show DNS records from Render in a dialog with Copy button. */
+    private void showDnsRecords() {
+        final String domain = etDomain.getText().toString().trim().toLowerCase();
+        if (domain.isEmpty()) {
+            Toast.makeText(this, "Enter your domain first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String apiKey = prefs().getString("render_api_key", "");
+        final String serviceId = prefs().getString("render_service_id", "");
+        if (apiKey.isEmpty()) {
+            Toast.makeText(this, "Set Render API key in Settings first", Toast.LENGTH_LONG).show();
+            return;
+        }
+        log("Fetching DNS records for " + domain + "...");
+        setStatus("Fetching DNS records...");
+        btnDnsRecords.setEnabled(false);
+        RenderApi.getDnsInstructions(apiKey, serviceId, domain, new RenderApi.Callback() {
+            @Override public void onSuccess(final String message) {
+                runOnUiThread(() -> {
+                    btnDnsRecords.setEnabled(true);
+                    log(message);
+                    setStatus("DNS records shown in dialog");
+                    TextView recordsView = new TextView(DnsActivity.this);
+                    recordsView.setTypeface(android.graphics.Typeface.MONOSPACE);
+                    recordsView.setText(message);
+                    recordsView.setTextSize(12f);
+                    recordsView.setTextColor(0xFFE0E0E0);
+                    recordsView.setPadding(48, 32, 48, 32);
+                    android.widget.ScrollView scroll = new android.widget.ScrollView(DnsActivity.this);
+                    scroll.addView(recordsView);
+                    new AlertDialog.Builder(DnsActivity.this)
+                        .setTitle("DNS Records for " + domain)
+                        .setView(scroll)
+                        .setPositiveButton("Copy All", (d, w) -> {
+                            android.content.ClipboardManager clip =
+                                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            android.content.ClipData data =
+                                android.content.ClipData.newPlainText("DNS Records", message);
+                            clip.setPrimaryClip(data);
+                            Toast.makeText(DnsActivity.this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("Close", null)
+                        .show();
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    btnDnsRecords.setEnabled(true);
+                    log("ERROR: " + error);
+                    setStatus("Failed: " + error);
+                });
+            }
+        });
+    }
+
+    /** Remove the domain from Render. */
+    private void removeDomainFromRender() {
+        final String domain = etDomain.getText().toString().trim().toLowerCase();
+        if (domain.isEmpty()) {
+            Toast.makeText(this, "Enter your domain first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String apiKey = prefs().getString("render_api_key", "");
+        final String serviceId = prefs().getString("render_service_id", "");
+        if (apiKey.isEmpty()) return;
+        new AlertDialog.Builder(this)
+            .setTitle("Remove Domain")
+            .setMessage("Remove " + domain + " from Render?")
+            .setPositiveButton("Remove", (d, w) -> {
+                log("Removing " + domain + " from Render...");
+                setStatus("Removing domain...");
+                btnRemoveDomain.setEnabled(false);
+                RenderApi.removeCustomDomain(apiKey, serviceId, domain, new RenderApi.Callback() {
+                    @Override public void onSuccess(String message) {
+                        runOnUiThread(() -> {
+                            btnRemoveDomain.setEnabled(true);
+                            log(message);
+                            setStatus(message);
+                            Toast.makeText(DnsActivity.this, "Domain removed", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                    @Override public void onError(String error) {
+                        runOnUiThread(() -> {
+                            btnRemoveDomain.setEnabled(true);
+                            log("ERROR: " + error);
+                            setStatus("Failed: " + error);
+                        });
+                    }
+                });
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 }
