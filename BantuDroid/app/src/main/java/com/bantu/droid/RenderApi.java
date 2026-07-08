@@ -244,6 +244,21 @@ public class RenderApi {
         }).start();
     }
 
+    /**
+     * Helper: extract the domain name from a Render custom domain object.
+     * Render's API is inconsistent — the field can be 'customDomain', 'name',
+     * 'hostname', or 'domain' depending on the endpoint. Check all of them.
+     */
+    private static String extractDomainName(JSONObject d) {
+        if (d == null) return "";
+        String[] keys = {"customDomain", "name", "hostname", "domain"};
+        for (String k : keys) {
+            String v = d.optString(k, "");
+            if (!v.isEmpty()) return v.toLowerCase();
+        }
+        return "";
+    }
+
     /** Sanitize a domain name per RFC 1034. */
     public static String sanitizeDomain(String input) {
         if (input == null) return null;
@@ -312,8 +327,7 @@ public class RenderApi {
                 if (domains != null) {
                     for (int i = 0; i < domains.length(); i++) {
                         JSONObject d = domains.getJSONObject(i);
-                        String dName = d.optString("customDomain", "").toLowerCase();
-                        if (dName.isEmpty()) dName = d.optString("name", "").toLowerCase();
+                        String dName = extractDomainName(d);
                         if (dName.equals(cleanDomain)) {
                             String ssl = d.optString("sslStatus", "pending");
                             cb.onSuccess("Domain verified on Render: " + cleanDomain + "\nSSL: " + ssl);
@@ -354,13 +368,17 @@ public class RenderApi {
                 if (domains != null) {
                     for (int i = 0; i < domains.length(); i++) {
                         JSONObject d = domains.getJSONObject(i);
-                        String dName = d.optString("customDomain", "").toLowerCase();
-                        if (dName.isEmpty()) dName = d.optString("name", "").toLowerCase();
+                        String dName = extractDomainName(d);
                         if (dName.equals(cleanDomain)) { domainObj = d; break; }
                     }
                 }
                 if (domainObj == null) {
-                    cb.onError("Domain " + cleanDomain + " not found on Render. Add it first.");
+                    // Domain not found — show what Render returned so user can debug
+                    String rawList = listResult.body == null ? "(empty)" :
+                        listResult.body.substring(0, Math.min(500, listResult.body.length()));
+                    cb.onError("Domain " + cleanDomain + " not found in Render's list.\n\n"
+                        + "Render returned " + (domains == null ? 0 : domains.length()) + " domain(s).\n"
+                        + "Raw response:\n" + rawList);
                     return;
                 }
 
@@ -438,7 +456,8 @@ public class RenderApi {
                 sb.append(domains.length()).append(" custom domain(s) on this service:\n");
                 for (int i = 0; i < domains.length(); i++) {
                     JSONObject d = domains.getJSONObject(i);
-                    String name = d.optString("customDomain", "?");
+                    String name = extractDomainName(d);
+                    if (name.isEmpty()) name = "(unknown)";
                     String ssl = d.optString("sslStatus", "?");
                     String verif = d.optString("verificationStatus", "?");
                     sb.append("  - ").append(name)
@@ -473,7 +492,7 @@ public class RenderApi {
                 String lowerDomain = domain.trim().toLowerCase();
                 for (int i = 0; i < domains.length(); i++) {
                     JSONObject d = domains.getJSONObject(i);
-                    String dName = d.optString("customDomain", "").toLowerCase();
+                    String dName = extractDomainName(d);
                     if (dName.equals(lowerDomain)) {
                         String domainId = d.optString("id", "");
                         String ssl = d.optString("sslStatus", "unknown");
@@ -521,7 +540,7 @@ public class RenderApi {
                 String domainId = null;
                 for (int i = 0; i < domains.length(); i++) {
                     JSONObject d = domains.getJSONObject(i);
-                    if (d.optString("customDomain", "").toLowerCase().equals(lowerDomain)) {
+                    if (extractDomainName(d).equals(lowerDomain)) {
                         domainId = d.optString("id", "");
                         break;
                     }
